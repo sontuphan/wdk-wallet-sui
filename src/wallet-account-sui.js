@@ -76,7 +76,7 @@ function assertFullHardenedPath (path) {
  * {@link WalletAccountReadOnlySui}, this class adds the ones that need the
  * account's key.
  *
- * @implements {IWalletAccount<SignatureWithBytes>}
+ * @implements {IWalletAccount}
  */
 export default class WalletAccountSui extends WalletAccountReadOnlySui {
   /**

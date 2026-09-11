@@ -30,8 +30,6 @@ import { isValidTransactionDigest } from '@mysten/sui/utils'
 /** @typedef {import('@mysten/sui/client').SuiClientTypes.Network} Network */
 /** @typedef {import('@protobuf-ts/runtime-rpc').RpcTransport} RpcTransport */
 /** @typedef {import('@mysten/sui/grpc').GrpcTypes.ExecutedTransaction} ExecutedTransaction */
-/** @typedef {import('@mysten/sui/grpc').SuiGrpcClient} SuiGrpcClient */
-/** @typedef {import('@mysten/sui/transactions').Transaction} Transaction */
 
 /**
  * @typedef {Object} SimpleSuiTransaction
