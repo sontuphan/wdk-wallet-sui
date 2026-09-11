@@ -383,6 +383,42 @@ describe('WalletAccountSui', () => {
     })
   })
 
+  describe('toReadOnlyAccount', () => {
+    test('should return a read-only copy of the account', async () => {
+      const account = createAccount()
+
+      const readOnlyAccount = await account.toReadOnlyAccount()
+
+      expect(readOnlyAccount).toBeInstanceOf(WalletAccountReadOnlySui)
+      expect(readOnlyAccount).not.toBeInstanceOf(WalletAccountSui)
+      expect(await readOnlyAccount.getAddress()).toBe(ACCOUNT_0.address)
+    })
+
+    test('should hand the provider over to the copy', async () => {
+      const account = createAccount()
+
+      const readOnlyAccount = await account.toReadOnlyAccount()
+
+      expect(readOnlyAccount._config).toBe(account._config)
+      expect(readOnlyAccount._client).toBeDefined()
+    })
+
+    test('should return the same copy on every call', async () => {
+      const account = createAccount()
+
+      expect(await account.toReadOnlyAccount()).toBe(await account.toReadOnlyAccount())
+    })
+
+    test('should not carry the account key', async () => {
+      const account = createAccount()
+
+      const readOnlyAccount = await account.toReadOnlyAccount()
+
+      expect(readOnlyAccount._rawPrivateKey).toBeUndefined()
+      expect(readOnlyAccount.sign).toBeUndefined()
+    })
+  })
+
   describe('Not implemented yet', () => {
     const account = new WalletAccountSui(SEED_PHRASE, PATH)
 
@@ -394,8 +430,7 @@ describe('WalletAccountSui', () => {
 
     test.each([
       ['sendTransaction', () => account.sendTransaction({})],
-      ['transfer', () => account.transfer({})],
-      ['toReadOnlyAccount', () => account.toReadOnlyAccount()]
+      ['transfer', () => account.transfer({})]
     ])('%s should reject with a not implemented error', async (_, call) => {
       await expect(call()).rejects.toThrow(NotImplementedError)
     })

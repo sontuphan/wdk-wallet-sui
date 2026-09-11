@@ -122,6 +122,15 @@ export default class WalletAccountSui extends WalletAccountReadOnlySui {
      * @type {Uint8Array}
      */
     this._rawPublicKey = publicKey.toRawBytes()
+
+    /**
+     * The read-only copy of this account, created on the first call to
+     * {@link toReadOnlyAccount}.
+     *
+     * @private
+     * @type {WalletAccountReadOnlySui | undefined}
+     */
+    this._suiReadOnlyAccount = undefined
   }
 
   /**
@@ -246,10 +255,19 @@ export default class WalletAccountSui extends WalletAccountReadOnlySui {
   /**
    * Returns a read-only copy of the account.
    *
+   * The copy is created once and reused, so that the account doesn't open a
+   * connection to the provider on every call.
+   *
    * @returns {Promise<WalletAccountReadOnlySui>} The read-only account.
    */
   async toReadOnlyAccount () {
-    throw new NotImplementedError('toReadOnlyAccount()')
+    if (!this._suiReadOnlyAccount) {
+      const address = await this.getAddress()
+
+      this._suiReadOnlyAccount = new WalletAccountReadOnlySui(address, this._config)
+    }
+
+    return this._suiReadOnlyAccount
   }
 
   /**
