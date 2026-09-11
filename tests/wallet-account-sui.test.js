@@ -1,11 +1,14 @@
-import { describe, expect, test } from '@jest/globals'
+import { describe, expect, jest, test } from '@jest/globals'
 
 import { Ed25519Keypair, Ed25519PublicKey } from '@mysten/sui/keypairs/ed25519'
+import { Transaction } from '@mysten/sui/transactions'
+import { verifyTransactionSignature } from '@mysten/sui/verify'
+import { fromBase64 } from '@mysten/sui/utils'
 import * as bip39 from 'bip39'
 
 import WalletAccountSui from '../src/wallet-account-sui.js'
 import WalletAccountReadOnlySui from '../src/wallet-account-read-only-sui.js'
-import { AssertionError, NotImplementedError, ValueError } from '@tetherto/wdk-wallet'
+import { AssertionError, NotImplementedError, ProviderRequiredError, TransactionError, ValueError } from '@tetherto/wdk-wallet'
 
 const SEED_PHRASE = 'cook voyage document eight skate token alien guide drink uncle term abuse'
 
@@ -36,6 +39,57 @@ const ACCOUNT_1 = {
 }
 
 const hex = (bytes) => Buffer.from(bytes).toString('hex')
+
+const RECIPIENT = '0x4811486fe962452e3106e2991b88201703e08c4ee3772d120e941ee057cb3496'
+
+const DUMMY_GAS_COIN = {
+  objectId: '0x0466a9a57add505b7b85ac485054f9b71f574f4504d9c70acd8f73ef11e0dc30',
+  version: 954_274_396n,
+  digest: 'ECoiTzmhn29C7ruyPD69C4smexiC7bMdhbUTHcqbCpHF'
+}
+
+/**
+ * The repeated fields of a transaction's effects. The sdk walks them while
+ * parsing a response, so they are always part of one.
+ */
+const EMPTY_EFFECTS = {
+  dependencies: [],
+  changedObjects: [],
+  unchangedConsensusObjects: [],
+  unchangedLoadedRuntimeObjects: []
+}
+
+/**
+ * A grpc transport answering the one call a transaction is resolved with: the
+ * node picks the gas coins and hands the transaction back.
+ */
+function createTransport (overrides = {}) {
+  const handlers = {
+    SimulateTransaction: (input) => ({
+      transaction: {
+        transaction: {
+          ...input.transaction,
+          gasPayment: { objects: [DUMMY_GAS_COIN], owner: ACCOUNT_0.address, price: 1_000n, budget: 2_000_000n }
+        },
+        effects: { ...EMPTY_EFFECTS, status: { success: true } }
+      }
+    }),
+    ...overrides
+  }
+
+  return {
+    mergeOptions: (options) => options ?? {},
+    unary: jest.fn(async (method, input) => {
+      const handler = handlers[method.name]
+      if (!handler) throw new Error(`Unexpected grpc method: ${method.name}`)
+      return { response: await handler(input) }
+    })
+  }
+}
+
+function createAccount (path = PATH, overrides = {}) {
+  return new WalletAccountSui(SEED_PHRASE, path, { transport: createTransport(overrides), network: 'mainnet' })
+}
 
 describe('WalletAccountSui', () => {
   describe('Constructor', () => {
@@ -244,6 +298,91 @@ describe('WalletAccountSui', () => {
     })
   })
 
+  describe('signTransaction', () => {
+    // What ACCOUNT_0 signs for a 1000 mist transfer to RECIPIENT, once the
+    // mocked node has resolved the gas payment.
+    const SIGNED_BYTES = 'AAACAAjoAwAAAAAAAAAgSBFIb+liRS4xBuKZG4ggFwPgjE7jdy0SDpQe4FfLNJYCAgABAQAAAQEDAAAAAAEBAFZrIeYUVTLcr20v4H0PPZ2IasybPC+bK9HStVmEFy/1AQRmqaV63VBbe4WsSFBU+bcfV09FBNnHCs2Pc+8R4NwwXBLhOAAAAAAgxC4jwZUViGUXf8c3gBMj8wOwyL/oUyYgc0EpuPhwmeJWayHmFFUy3K9tL+B9Dz2diGrMmzwvmyvR0rVZhBcv9egDAAAAAAAAgIQeAAAAAAAA'
+    const SIGNATURE = 'AMpfTKBdKmAz3Idqyqlfvc5lsXsJZfAKlKflqvYNHhP0BNJO9JN4PgLzqChjeCSJMZ2SRDtGw1ZGkWm+GuVUqgeI5PA4d1el4x3EFS3uhDSHtrxv43GAvhABs72jkR1f3w=='
+
+    test('should sign a native transfer', async () => {
+      const account = createAccount()
+
+      const signed = await account.signTransaction({ to: RECIPIENT, value: 1_000 })
+
+      expect(signed.bytes).toBe(SIGNED_BYTES)
+      expect(signed.signature).toBe(SIGNATURE)
+    })
+
+    test('should produce a signature of the transaction it returns', async () => {
+      const account = createAccount()
+
+      const { bytes, signature } = await account.signTransaction({ to: RECIPIENT, value: 1_000 })
+
+      const publicKey = await verifyTransactionSignature(fromBase64(bytes), signature)
+
+      expect(publicKey.toSuiAddress()).toBe(ACCOUNT_0.address)
+    })
+
+    test('should send a transaction that does not name its sender from this account', async () => {
+      const account = createAccount()
+
+      const tx = new Transaction()
+      const [coin] = tx.splitCoins(tx.gas, [1_000])
+      tx.transferObjects([coin], RECIPIENT)
+
+      const { bytes } = await account.signTransaction(tx)
+
+      expect(Transaction.from(fromBase64(bytes)).getData().sender).toBe(ACCOUNT_0.address)
+    })
+
+    test('should produce a different signature per account', async () => {
+      const account = createAccount()
+      const other = createAccount(ACCOUNT_1.path)
+
+      const signed = await account.signTransaction({ to: RECIPIENT, value: 1_000 })
+      const otherSigned = await other.signTransaction({ to: RECIPIENT, value: 1_000 })
+
+      expect(otherSigned.signature).not.toBe(signed.signature)
+    })
+
+    test('should throw if the account is not connected to a provider', async () => {
+      const account = new WalletAccountSui(SEED_PHRASE, PATH)
+
+      const promise = account.signTransaction({ to: RECIPIENT, value: 1_000 })
+
+      await expect(promise).rejects.toThrow(ProviderRequiredError)
+      await expect(promise).rejects.toThrow('The wallet must be connected to a provider to build transactions.')
+    })
+
+    test('should throw a value error for a malformed recipient', async () => {
+      const account = createAccount()
+
+      await expect(account.signTransaction({ to: 'not-an-address', value: 1_000 }))
+        .rejects.toThrow(ValueError)
+    })
+
+    test('should throw a transaction error when the transaction cannot be resolved', async () => {
+      const account = createAccount(PATH, {
+        SimulateTransaction: () => {
+          throw new Error('Unable to perform gas selection due to insufficient SUI balance for account')
+        }
+      })
+
+      await expect(account.signTransaction({ to: RECIPIENT, value: 1_000 }))
+        .rejects.toThrow(TransactionError)
+    })
+
+    test('should throw an assertion error once the key has been erased', async () => {
+      const account = createAccount()
+
+      // Stands in for dispose(), which is not implemented yet.
+      account._rawPrivateKey = undefined
+
+      await expect(account.signTransaction({ to: RECIPIENT, value: 1_000 }))
+        .rejects.toThrow(AssertionError)
+    })
+  })
+
   describe('Not implemented yet', () => {
     const account = new WalletAccountSui(SEED_PHRASE, PATH)
 
@@ -254,7 +393,6 @@ describe('WalletAccountSui', () => {
     })
 
     test.each([
-      ['signTransaction', () => account.signTransaction({})],
       ['sendTransaction', () => account.sendTransaction({})],
       ['transfer', () => account.transfer({})],
       ['toReadOnlyAccount', () => account.toReadOnlyAccount()]

@@ -34,13 +34,13 @@ import { isValidTransactionDigest } from '@mysten/sui/utils'
 /** @typedef {import('@mysten/sui/transactions').Transaction} Transaction */
 
 /**
- * @typedef {Object} NativeSuiTransaction
+ * @typedef {Object} SimpleSuiTransaction
  * @property {string} to - The transaction's recipient.
  * @property {number | bigint} value - The amount of suis to send to the recipient (in mists).
  */
 
 /**
- * @typedef {NativeSuiTransaction | Transaction} SuiTransaction
+ * @typedef {SimpleSuiTransaction | Transaction} SuiTransaction
  */
 
 /**
@@ -119,6 +119,34 @@ const INSUFFICIENT_BALANCE_MESSAGE = /insufficient (sui )?balance|insufficientco
  * @type {RegExp}
  */
 const INSUFFICIENT_TOKEN_BALANCE_MESSAGE = /^insufficient balance of/i
+
+/**
+ * Turns an error raised while resolving a transaction into the matching wallet
+ * development kit error.
+ *
+ * @param {*} error - The error thrown by the sdk.
+ * @returns {ValueError | ProviderError | TransactionError} The wallet development kit error.
+ */
+function toTransactionError (error) {
+  if (INSUFFICIENT_BALANCE_MESSAGE.test(error?.message)) {
+    return new TransactionError(error.message, { reason: TransactionErrorReason.INSUFFICIENT_BALANCE, cause: error })
+  }
+
+  // Resolving the transaction runs it against the node, so a failure of the
+  // provider reaches us wrapped into a simulation error.
+  const status = error?.code ? error : error?.cause
+
+  if (status?.code) {
+    return toClientError(status)
+  }
+
+  // Anything else the node rejected is a transaction that cannot execute.
+  if (error instanceof SimulationError) {
+    return new TransactionError(error.message, { cause: error })
+  }
+
+  return new ValueError(error?.message ?? 'The transaction is not valid.', { cause: error })
+}
 
 /**
  * Turns an error thrown by the grpc client into the matching wallet development
@@ -253,46 +281,17 @@ export default class WalletAccountReadOnlySui extends WalletAccountReadOnly {
       throw new ProviderRequiredError('The wallet must be connected to a provider to quote send transaction operations.')
     }
 
+    const transaction = await this._buildTransaction(tx)
+
     let result
 
     try {
-      if (!(tx instanceof Transaction)) {
-        const address = await this.getAddress()
-
-        const nativeTx = new Transaction()
-
-        nativeTx.setSender(address)
-
-        const [coin] = nativeTx.splitCoins(nativeTx.gas, [tx.value])
-
-        nativeTx.transferObjects([coin], tx.to)
-
-        tx = nativeTx
-      }
-
       result = await this._client.core.simulateTransaction({
-        transaction: await tx.build({ client: this._client }),
+        transaction,
         include: { effects: true }
       })
     } catch (error) {
-      if (INSUFFICIENT_BALANCE_MESSAGE.test(error?.message)) {
-        throw new TransactionError(error.message, { reason: TransactionErrorReason.INSUFFICIENT_BALANCE, cause: error })
-      }
-
-      // Resolving the transaction runs it against the node, so a failure of the
-      // provider reaches us wrapped into a simulation error.
-      const status = error?.code ? error : error?.cause
-
-      if (status?.code) {
-        throw toClientError(status)
-      }
-
-      // Anything else the node rejected is a transaction that cannot execute.
-      if (error instanceof SimulationError) {
-        throw new TransactionError(error.message, { cause: error })
-      }
-
-      throw new ValueError(error?.message ?? 'The transaction is not valid.', { cause: error })
+      throw toTransactionError(error)
     }
 
     if (result.$kind === 'FailedTransaction') {
@@ -359,6 +358,46 @@ export default class WalletAccountReadOnlySui extends WalletAccountReadOnly {
       }
 
       throw new ValueError(error?.message ?? 'The transfer options are not valid.', { cause: error })
+    }
+  }
+
+  /**
+   * Builds a transaction into the bytes a node simulates and executes.
+   *
+   * A plain object is turned into the transfer it describes, and a transaction
+   * that doesn't name its sender is sent from this account.
+   *
+   * @protected
+   * @param {SuiTransaction} tx - The transaction.
+   * @returns {Promise<Uint8Array>} The bcs-encoded transaction.
+   * @throws {ValueError} If the transaction is not valid.
+   * @throws {ProviderRequiredError} If the account is not connected to a provider.
+   * @throws {ProviderError} If the provider fails to resolve the transaction.
+   * @throws {TransactionError} If the transaction cannot execute.
+   */
+  async _buildTransaction (tx) {
+    if (!this._client) {
+      throw new ProviderRequiredError('The wallet must be connected to a provider to build transactions.')
+    }
+
+    const address = await this.getAddress()
+
+    try {
+      if (!(tx instanceof Transaction)) {
+        const nativeTx = new Transaction()
+
+        const [coin] = nativeTx.splitCoins(nativeTx.gas, [tx.value])
+
+        nativeTx.transferObjects([coin], tx.to)
+
+        tx = nativeTx
+      }
+
+      tx.setSenderIfNotSet(address)
+
+      return await tx.build({ client: this._client })
+    } catch (error) {
+      throw toTransactionError(error)
     }
   }
 

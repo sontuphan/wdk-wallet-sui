@@ -190,12 +190,27 @@ export default class WalletAccountSui extends WalletAccountReadOnlySui {
   /**
    * Signs a transaction.
    *
+   * The transaction is resolved against the node first, so that what gets
+   * signed is the transaction the node will execute, gas payment included.
+   *
    * @param {SuiTransaction} tx - The transaction to sign.
    * @returns {Promise<SignatureWithBytes>} The signed transaction.
+   * @throws {AssertionError} If the account has been disposed.
    * @throws {ValueError} If the transaction is not valid.
+   * @throws {ProviderRequiredError} If the account is not connected to a provider.
+   * @throws {ProviderError} If the provider fails to resolve the transaction.
+   * @throws {TransactionError} If the transaction cannot execute.
    */
   async signTransaction (tx) {
-    throw new NotImplementedError('signTransaction(tx)')
+    if (!this._rawPrivateKey) {
+      throw new AssertionError('The wallet account has been disposed.')
+    }
+
+    const transaction = await this._buildTransaction(tx)
+
+    const keypair = Ed25519Keypair.fromSecretKey(this._rawPrivateKey)
+
+    return await keypair.signTransaction(transaction)
   }
 
   /**
