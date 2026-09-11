@@ -38,7 +38,8 @@
   },
   "dependencies": {
     "@mysten/sui": "2.9.1",
-    "@tetherto/wdk-wallet": "^1.0.0-beta.19"
+    "@tetherto/wdk-wallet": "^1.0.0-beta.19",
+    "bip39": "3.1.0"
   },
   "devDependencies": {
     "cross-env": "10.1.0",
