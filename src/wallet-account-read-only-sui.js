@@ -28,6 +28,7 @@ import { isValidTransactionDigest } from '@mysten/sui/utils'
 /** @typedef {import('@tetherto/wdk-wallet').TransferResult} TransferResult */
 
 /** @typedef {import('@mysten/sui/client').SuiClientTypes.Network} Network */
+/** @typedef {import('@protobuf-ts/runtime-rpc').RpcTransport} RpcTransport */
 /** @typedef {import('@mysten/sui/grpc').GrpcTypes.ExecutedTransaction} ExecutedTransaction */
 /** @typedef {import('@mysten/sui/grpc').SuiGrpcClient} SuiGrpcClient */
 /** @typedef {import('@mysten/sui/transactions').Transaction} Transaction */
@@ -52,6 +53,7 @@ import { isValidTransactionDigest } from '@mysten/sui/utils'
 /**
  * @typedef {Object} SuiWalletConfig
  * @property {string} [rpcUrl] - The provider's rpc url.
+ * @property {RpcTransport} [transport] - A grpc transport to talk to the provider through, used instead of the one built from `rpcUrl`.
  * @property {Network} [network] - The name of the network to use (default: "mainnet").
  * @property {number | bigint} [transferMaxFee] - The maximum fee amount for transfer operations.
  */
@@ -166,7 +168,12 @@ export default class WalletAccountReadOnlySui extends WalletAccountReadOnly {
      */
     this._client = undefined
 
-    if (this._config.rpcUrl) {
+    if (this._config.transport) {
+      this._client = new SuiGrpcClient({
+        network: config.network || 'mainnet',
+        transport: config.transport
+      })
+    } else if (this._config.rpcUrl) {
       this._client = new SuiGrpcClient({
         network: config.network || 'mainnet',
         baseUrl: config.rpcUrl
@@ -272,14 +279,17 @@ export default class WalletAccountReadOnlySui extends WalletAccountReadOnly {
         throw new TransactionError(error.message, { reason: TransactionErrorReason.INSUFFICIENT_BALANCE, cause: error })
       }
 
-      // Resolving the transaction runs it against the node, so a transaction
-      // that cannot execute is reported here rather than in the result.
-      if (error instanceof SimulationError) {
-        throw new TransactionError(error.message, { cause: error })
+      // Resolving the transaction runs it against the node, so a failure of the
+      // provider reaches us wrapped into a simulation error.
+      const status = error?.code ? error : error?.cause
+
+      if (status?.code) {
+        throw toClientError(status)
       }
 
-      if (error?.code) {
-        throw toClientError(error)
+      // Anything else the node rejected is a transaction that cannot execute.
+      if (error instanceof SimulationError) {
+        throw new TransactionError(error.message, { cause: error })
       }
 
       throw new ValueError(error?.message ?? 'The transaction is not valid.', { cause: error })
