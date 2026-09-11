@@ -175,6 +175,19 @@ describe('WalletManagerSui', () => {
       await expect(promise).rejects.toThrow('The wallet must be connected to a provider to get fee rates.')
     })
 
+    test.each([
+      ['reports no epoch', {}],
+      ['reports an epoch without a price', { epoch: {} }]
+    ])('should throw a provider error when the node %s', async (_, response) => {
+      const wallet = createWallet({ GetEpoch: () => response })
+
+      const promise = wallet.getFeeRates()
+
+      await expect(promise).rejects.toThrow(ProviderError)
+      await expect(promise).rejects.toThrow('The provider did not report a reference gas price.')
+      await expect(promise).rejects.toMatchObject({ reason: ProviderErrorReason.INTERNAL_SERVER_ERROR })
+    })
+
     test('should throw a provider error when the node fails to answer', async () => {
       const wallet = createWallet({
         GetEpoch: () => {

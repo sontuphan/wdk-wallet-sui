@@ -14,7 +14,7 @@
 
 'use strict'
 
-import WalletManager, { ProviderRequiredError, ValueError } from '@tetherto/wdk-wallet'
+import WalletManager, { ProviderError, ProviderErrorReason, ProviderRequiredError, ValueError } from '@tetherto/wdk-wallet'
 
 import WalletAccountReadOnlySui, { toClientError } from './wallet-account-read-only-sui.js'
 import WalletAccountSui from './wallet-account-sui.js'
@@ -118,6 +118,12 @@ export default class WalletManagerSui extends WalletManager {
       ({ referenceGasPrice } = await this._client.getReferenceGasPrice())
     } catch (error) {
       throw toClientError(error)
+    }
+
+    if (!referenceGasPrice) {
+      throw new ProviderError('The provider did not report a reference gas price.', {
+        reason: ProviderErrorReason.INTERNAL_SERVER_ERROR
+      })
     }
 
     const normal = BigInt(referenceGasPrice)

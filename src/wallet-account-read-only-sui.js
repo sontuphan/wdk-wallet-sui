@@ -139,7 +139,6 @@ export function toTransactionError (error) {
     return toClientError(status)
   }
 
-  // Anything else the node rejected is a transaction that cannot execute.
   if (error instanceof SimulationError) {
     return new TransactionError(error.message, { cause: error })
   }
@@ -465,7 +464,6 @@ export default class WalletAccountReadOnlySui extends WalletAccountReadOnly {
         readMask: { paths: ['digest', 'signatures', 'checkpoint', 'timestamp', 'effects', 'balance_changes'] }
       }))
     } catch (error) {
-      // The node only knows a digest once the transaction has been executed.
       if (error?.code === 'NOT_FOUND') {
         return null
       }

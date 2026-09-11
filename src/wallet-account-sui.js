@@ -39,8 +39,8 @@ import WalletAccountReadOnlySui, { toTransactionError, toTransferError } from '.
 /** @typedef {import('./wallet-account-read-only-sui.js').SuiTransferOptions} SuiTransferOptions */
 /** @typedef {import('./wallet-account-read-only-sui.js').SuiWalletConfig} SuiWalletConfig */
 
-// The SLIP-0044 coin-type prefix for sui. All path segments must be hardened:
-// SLIP-0010 ed25519 derivation does not support non-hardened children.
+// Every path segment must be hardened: SLIP-0010 ed25519 derivation has no
+// non-hardened children.
 const SLIP_0010_SUI_DERIVATION_PATH_PREFIX = "m/44'/784'"
 
 /**
