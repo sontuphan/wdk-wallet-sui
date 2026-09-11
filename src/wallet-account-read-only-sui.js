@@ -251,6 +251,31 @@ export default class WalletAccountReadOnlySui extends WalletAccountReadOnly {
   }
 
   /**
+   * The poll cadence of {@link waitForTransaction}, in milliseconds.
+   *
+   * Mainnet produces a checkpoint about every 200 milliseconds, so a
+   * transaction that has executed is reported final within roughly a second.
+   *
+   * @type {number}
+   */
+  get defaultWaitInterval () {
+    return 500
+  }
+
+  /**
+   * The time budget of {@link waitForTransaction}, in milliseconds.
+   *
+   * A sui transaction is either executed or rejected when it is submitted, with
+   * no mempool to wait in, so a digest the node still doesn't know after this
+   * long is not going to land.
+   *
+   * @type {number}
+   */
+  get defaultWaitTimeout () {
+    return 30_000
+  }
+
+  /**
    * Returns the account's sui balance.
    *
    * @returns {Promise<bigint>} The sui balance (in mists).

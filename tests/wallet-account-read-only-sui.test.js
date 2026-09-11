@@ -13,6 +13,7 @@ import {
   TransactionErrorReason,
   TransferError,
   TransferErrorReason,
+  TimeoutError,
   ValueError
 } from '@tetherto/wdk-wallet'
 
@@ -495,12 +496,33 @@ describe('WalletAccountReadOnlySui', () => {
     })
   })
 
+  describe('wait defaults', () => {
+    test('should poll at the cadence sui produces checkpoints at', () => {
+      expect(account.defaultWaitInterval).toBe(500)
+    })
+
+    test('should give a transaction half a minute to land', () => {
+      expect(account.defaultWaitTimeout).toBe(30_000)
+    })
+  })
+
   describe('waitForTransaction', () => {
     test('should resolve once the transaction reaches the target finality', async () => {
       const receipt = await account.waitForTransaction(DIGEST, { target: 'final' })
 
       expect(receipt.finality).toBe('final')
       expect(receipt.hash).toBe(DIGEST)
+    })
+
+    test('should poll and time out on its own defaults', async () => {
+      const account = createAccount({
+        GetTransaction: () => { throw grpcError('NOT_FOUND', `Transaction ${DIGEST} not found`) }
+      })
+
+      jest.spyOn(account, 'defaultWaitInterval', 'get').mockReturnValue(1)
+      jest.spyOn(account, 'defaultWaitTimeout', 'get').mockReturnValue(20)
+
+      await expect(account.waitForTransaction(DIGEST)).rejects.toThrow(TimeoutError)
     })
 
     test('should keep polling while the node does not know the digest', async () => {
