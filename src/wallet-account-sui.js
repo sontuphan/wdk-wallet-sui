@@ -14,14 +14,16 @@
 
 'use strict'
 
-import { AssertionError, NotImplementedError, ValueError } from '@tetherto/wdk-wallet'
+import { AssertionError, MaximumFeeExceededError, NotImplementedError, ProviderRequiredError, TransactionError, ValueError } from '@tetherto/wdk-wallet'
 
 import { Ed25519Keypair } from '@mysten/sui/keypairs/ed25519'
 import { decodeSuiPrivateKey, toSerializedSignature } from '@mysten/sui/cryptography'
+import { Transaction } from '@mysten/sui/transactions'
+import { fromBase64 } from '@mysten/sui/utils'
 
 import * as bip39 from 'bip39'
 
-import WalletAccountReadOnlySui from './wallet-account-read-only-sui.js'
+import WalletAccountReadOnlySui, { toTransactionError, toTransferError } from './wallet-account-read-only-sui.js'
 
 /** @typedef {import('@tetherto/wdk-wallet').IWalletAccount} IWalletAccount */
 /** @typedef {import('@tetherto/wdk-wallet').KeyPair} KeyPair */
@@ -37,6 +39,17 @@ import WalletAccountReadOnlySui from './wallet-account-read-only-sui.js'
 // The SLIP-0044 coin-type prefix for sui. All path segments must be hardened:
 // SLIP-0010 ed25519 derivation does not support non-hardened children.
 const SLIP_0010_SUI_DERIVATION_PATH_PREFIX = "m/44'/784'"
+
+/**
+ * Tells a transaction that has already been signed from one that still has to
+ * be.
+ *
+ * @param {*} tx - The transaction.
+ * @returns {boolean} True if the transaction carries its bytes and signature.
+ */
+function isSignedTransaction (tx) {
+  return typeof tx?.bytes === 'string' && typeof tx?.signature === 'string'
+}
 
 /**
  * Asserts that a user-supplied derivation path is exactly three hardened index
@@ -205,10 +218,6 @@ export default class WalletAccountSui extends WalletAccountReadOnlySui {
    * @param {SuiTransaction} tx - The transaction to sign.
    * @returns {Promise<SignatureWithBytes>} The signed transaction.
    * @throws {AssertionError} If the account has been disposed.
-   * @throws {ValueError} If the transaction is not valid.
-   * @throws {ProviderRequiredError} If the account is not connected to a provider.
-   * @throws {ProviderError} If the provider fails to resolve the transaction.
-   * @throws {TransactionError} If the transaction cannot execute.
    */
   async signTransaction (tx) {
     if (!this._rawPrivateKey) {
@@ -223,33 +232,118 @@ export default class WalletAccountSui extends WalletAccountReadOnlySui {
   }
 
   /**
+   * Quotes the costs of a send transaction operation.
+   *
+   * @param {SuiTransaction | SignatureWithBytes} tx - The transaction, signed or not.
+   * @returns {Promise<Omit<TransactionResult, 'hash'>>} The transaction's quotes.
+   */
+  async quoteSendTransaction (tx) {
+    if (isSignedTransaction(tx)) {
+      tx = Transaction.from(fromBase64(tx.bytes))
+    }
+
+    return await super.quoteSendTransaction(tx)
+  }
+
+  /**
    * Sends a transaction.
+   *
+   * The transaction is signed if it isn't already, quoted, and only then
+   * executed. The returned fee is the one the node charged, which the quote
+   * doesn't know exactly.
    *
    * @param {SuiTransaction | SignatureWithBytes} tx - The transaction.
    * @returns {Promise<TransactionResult>} The transaction's result.
-   * @throws {ValueError} If the transaction is not valid.
-   * @throws {ProviderRequiredError} If the method requires a provider.
+   * @throws {AssertionError} If the account has been disposed.
+   * @throws {ProviderRequiredError} If the account is not connected to a provider.
    * @throws {ProviderError} If the provider fails to perform the transaction.
-   * @throws {TransactionError} If the transaction fails with an error.
+   * @throws {TransactionError} If the transaction fails to execute.
    * @throws {MaximumFeeExceededError} If the costs of the transaction exceed the transaction max. fee option.
    */
   async sendTransaction (tx) {
-    throw new NotImplementedError('sendTransaction(tx)')
+    if (!this._rawPrivateKey) {
+      throw new AssertionError('The wallet account has been disposed.')
+    }
+
+    if (!this._client) {
+      throw new ProviderRequiredError('The wallet must be connected to a provider to send transactions.')
+    }
+
+    const signed = isSignedTransaction(tx) ? tx : await this.signTransaction(tx)
+
+    const { fee } = await this.quoteSendTransaction(signed)
+
+    if (this._config.transactionMaxFee !== undefined && fee > this._config.transactionMaxFee) {
+      throw new MaximumFeeExceededError('Exceeded maximum fee cost for transaction operation.')
+    }
+
+    let result
+
+    try {
+      result = await this._client.core.executeTransaction({
+        transaction: fromBase64(signed.bytes),
+        signatures: [signed.signature],
+        include: { effects: true }
+      })
+    } catch (error) {
+      throw toTransactionError(error)
+    }
+
+    if (result.$kind === 'FailedTransaction') {
+      const { digest, effects } = result.FailedTransaction
+
+      throw new TransactionError(
+        effects?.status?.error?.message ?? `The transaction '${digest}' failed to execute.`,
+        { cause: result }
+      )
+    }
+
+    const { digest, effects } = result.Transaction
+
+    const { computationCost, storageCost, storageRebate } = effects.gasUsed
+
+    return { hash: digest, fee: BigInt(computationCost) + BigInt(storageCost) - BigInt(storageRebate) }
   }
 
   /**
    * Transfers a token to another address.
    *
+   * The transfer is signed once, so the transaction that is quoted against the
+   * transfer's maximum fee is the one that executes.
+   *
    * @param {SuiTransferOptions} options - The transfer's options.
    * @returns {Promise<TransferResult>} The transfer's result.
-   * @throws {ValueError} If the transfer options are not valid.
-   * @throws {ProviderRequiredError} If the method requires a provider.
-   * @throws {ProviderError} If the provider fails to perform the transfer.
-   * @throws {TransferError} If the transfer fails with an error.
+   * @throws {AssertionError} If the account has been disposed.
+   * @throws {ProviderRequiredError} If the account is not connected to a provider.
+   * @throws {TransferError} If the transfer fails to execute.
    * @throws {MaximumFeeExceededError} If the costs of the transfer exceed the transfer max. fee option.
    */
   async transfer (options) {
-    throw new NotImplementedError('transfer(options)')
+    if (!this._rawPrivateKey) {
+      throw new AssertionError('The wallet account has been disposed.')
+    }
+
+    if (!this._client) {
+      throw new ProviderRequiredError('The wallet must be connected to a provider to transfer tokens.')
+    }
+
+    try {
+      const tx = await this._getTransferTransaction(options)
+
+      const signed = await this.signTransaction(tx)
+
+      const { fee } = await this.quoteSendTransaction(signed)
+
+      if (this._config.transferMaxFee !== undefined && fee > this._config.transferMaxFee) {
+        throw new MaximumFeeExceededError('Exceeded maximum fee cost for transfer operation.')
+      }
+
+      const result = await this.sendTransaction(signed)
+
+      return result
+    } catch (error) {
+      throw toTransferError(error)
+    }
   }
 
   /**

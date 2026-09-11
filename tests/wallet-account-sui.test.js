@@ -8,7 +8,7 @@ import * as bip39 from 'bip39'
 
 import WalletAccountSui from '../src/wallet-account-sui.js'
 import WalletAccountReadOnlySui from '../src/wallet-account-read-only-sui.js'
-import { AssertionError, NotImplementedError, ProviderRequiredError, TransactionError, ValueError } from '@tetherto/wdk-wallet'
+import { AssertionError, MaximumFeeExceededError, NotImplementedError, ProviderError, ProviderRequiredError, TransactionError, TransferError, TransferErrorReason, ValueError } from '@tetherto/wdk-wallet'
 
 const SEED_PHRASE = 'cook voyage document eight skate token alien guide drink uncle term abuse'
 
@@ -59,21 +59,59 @@ const EMPTY_EFFECTS = {
   unchangedLoadedRuntimeObjects: []
 }
 
+const DIGEST = 'FY7TzypQkPgqrb4Vp1K2QMzT7hGyevDWQdoLq3vDfr4R'
+
+const TOKEN = '0x375f70cf2ae4c00bf37117d0c85a2c71545e6ee05c4a5c7d282cd66a4504b068::usdt::USDT'
+
+const DUMMY_TOKEN_BALANCE = 482n
+
+const DUMMY_TOKEN_COIN = {
+  objectId: '0x33e9894a79b5662af29cfcecca812c52844d3ace8f1054c065ac92e9e6274ec7',
+  version: 575_995_264n,
+  digest: 'TTJ2GCTqeB4fzNu79XUC4wHSfrEs4xofvamSCHChy8b',
+  owner: { kind: 1, address: ACCOUNT_0.address },
+  objectType: `0x0000000000000000000000000000000000000000000000000000000000000002::coin::Coin<${TOKEN}>`,
+  balance: DUMMY_TOKEN_BALANCE
+}
+
+// Fee constants implied by the mocked gas summary below:
+// fee = computationCost + storageCost - storageRebate = 100_000 + 4_780_400 - 4_732_596.
+const DUMMY_GAS_USED = {
+  computationCost: 100_000n,
+  storageCost: 4_780_400n,
+  storageRebate: 4_732_596n,
+  nonRefundableStorageFee: 47_804n
+}
+const MOCKED_FEE = 147_804n
+
+const EXECUTED_TRANSACTION = {
+  transaction: {
+    digest: DIGEST,
+    effects: { ...EMPTY_EFFECTS, status: { success: true }, gasUsed: DUMMY_GAS_USED }
+  }
+}
+
 /**
- * A grpc transport answering the one call a transaction is resolved with: the
- * node picks the gas coins and hands the transaction back.
+ * A grpc transport answering the calls a transaction goes through: the node
+ * resolves it (picking the gas coins), simulates it for the quote, then
+ * executes it.
  */
 function createTransport (overrides = {}) {
   const handlers = {
-    SimulateTransaction: (input) => ({
-      transaction: {
-        transaction: {
-          ...input.transaction,
-          gasPayment: { objects: [DUMMY_GAS_COIN], owner: ACCOUNT_0.address, price: 1_000n, budget: 2_000_000n }
-        },
-        effects: { ...EMPTY_EFFECTS, status: { success: true } }
-      }
-    }),
+    GetBalance: ({ coinType }) => ({ balance: { coinType, balance: DUMMY_TOKEN_BALANCE, coinBalance: DUMMY_TOKEN_BALANCE } }),
+    ListOwnedObjects: () => ({ objects: [DUMMY_TOKEN_COIN] }),
+    SimulateTransaction: (input) => input.doGasSelection
+      ? {
+          transaction: {
+            transaction: {
+              ...input.transaction,
+              gasPayment: { objects: [DUMMY_GAS_COIN], owner: ACCOUNT_0.address, price: 1_000n, budget: 2_000_000n }
+            },
+            effects: { ...EMPTY_EFFECTS, status: { success: true } }
+          }
+        }
+      : EXECUTED_TRANSACTION,
+    ExecuteTransaction: () => EXECUTED_TRANSACTION,
     ...overrides
   }
 
@@ -383,6 +421,262 @@ describe('WalletAccountSui', () => {
     })
   })
 
+  describe('quoteSendTransaction', () => {
+    test('should quote a transaction that is not signed yet', async () => {
+      const account = createAccount()
+
+      const { fee } = await account.quoteSendTransaction({ to: RECIPIENT, value: 1_000 })
+
+      expect(fee).toBe(MOCKED_FEE)
+    })
+
+    test('should quote an already signed transaction', async () => {
+      const account = createAccount()
+
+      const signed = await account.signTransaction({ to: RECIPIENT, value: 1_000 })
+
+      const { fee } = await account.quoteSendTransaction(signed)
+
+      expect(fee).toBe(MOCKED_FEE)
+    })
+
+    test('should quote a signed transaction without resolving it again', async () => {
+      const transport = createTransport()
+      const account = new WalletAccountSui(SEED_PHRASE, PATH, { transport, network: 'mainnet' })
+
+      const signed = await account.signTransaction({ to: RECIPIENT, value: 1_000 })
+
+      transport.unary.mockClear()
+
+      await account.quoteSendTransaction(signed)
+
+      expect(transport.unary).toHaveBeenCalledTimes(1)
+      expect(transport.unary).toHaveBeenCalledWith(
+        expect.objectContaining({ name: 'SimulateTransaction' }),
+        expect.objectContaining({ doGasSelection: false }),
+        expect.anything()
+      )
+    })
+  })
+
+  describe('sendTransaction', () => {
+    test('should return the hash and the fee of the transaction', async () => {
+      const account = createAccount()
+
+      const result = await account.sendTransaction({ to: RECIPIENT, value: 1_000 })
+
+      expect(result).toEqual({ hash: DIGEST, fee: MOCKED_FEE })
+    })
+
+    test('should resolve, quote and then execute the transaction', async () => {
+      const transport = createTransport()
+      const account = new WalletAccountSui(SEED_PHRASE, PATH, { transport, network: 'mainnet' })
+
+      await account.sendTransaction({ to: RECIPIENT, value: 1_000 })
+
+      expect(transport.unary.mock.calls.map(([method]) => method.name))
+        .toEqual(['SimulateTransaction', 'SimulateTransaction', 'ExecuteTransaction'])
+    })
+
+    test('should execute the signature of an already signed transaction', async () => {
+      const transport = createTransport()
+      const account = new WalletAccountSui(SEED_PHRASE, PATH, { transport, network: 'mainnet' })
+
+      const signed = await account.signTransaction({ to: RECIPIENT, value: 1_000 })
+
+      transport.unary.mockClear()
+
+      const result = await account.sendTransaction(signed)
+
+      const [method, request] = transport.unary.mock.calls.at(-1)
+
+      expect(result).toEqual({ hash: DIGEST, fee: MOCKED_FEE })
+      expect(method.name).toBe('ExecuteTransaction')
+      expect(request.transaction.bcs.value).toEqual(fromBase64(signed.bytes))
+      expect(request.signatures[0].bcs.value).toEqual(fromBase64(signed.signature))
+    })
+
+    test('should throw if the fee exceeds the maximum transaction fee', async () => {
+      const account = new WalletAccountSui(SEED_PHRASE, PATH, {
+        transport: createTransport(),
+        network: 'mainnet',
+        transactionMaxFee: MOCKED_FEE - 1n
+      })
+
+      const promise = account.sendTransaction({ to: RECIPIENT, value: 1_000 })
+
+      await expect(promise).rejects.toThrow(MaximumFeeExceededError)
+      await expect(promise).rejects.toThrow('Exceeded maximum fee cost for transaction operation.')
+    })
+
+    test('should not execute a transaction that exceeds the maximum fee', async () => {
+      const transport = createTransport()
+      const account = new WalletAccountSui(SEED_PHRASE, PATH, {
+        transport,
+        network: 'mainnet',
+        transactionMaxFee: MOCKED_FEE - 1n
+      })
+
+      await expect(account.sendTransaction({ to: RECIPIENT, value: 1_000 })).rejects.toThrow(MaximumFeeExceededError)
+
+      expect(transport.unary.mock.calls.map(([method]) => method.name))
+        .not.toContain('ExecuteTransaction')
+    })
+
+    test('should send a transaction whose fee is the maximum transaction fee', async () => {
+      const account = new WalletAccountSui(SEED_PHRASE, PATH, {
+        transport: createTransport(),
+        network: 'mainnet',
+        transactionMaxFee: MOCKED_FEE
+      })
+
+      await expect(account.sendTransaction({ to: RECIPIENT, value: 1_000 })).resolves.toEqual({
+        hash: DIGEST,
+        fee: MOCKED_FEE
+      })
+    })
+
+    test('should throw a transaction error when the execution fails', async () => {
+      const account = createAccount(PATH, {
+        ExecuteTransaction: () => ({
+          transaction: {
+            digest: DIGEST,
+            effects: {
+              ...EMPTY_EFFECTS,
+              status: { success: false, error: { description: 'MoveAbort' } },
+              gasUsed: DUMMY_GAS_USED
+            }
+          }
+        })
+      })
+
+      await expect(account.sendTransaction({ to: RECIPIENT, value: 1_000 }))
+        .rejects.toThrow(TransactionError)
+    })
+
+    test('should throw a provider error when the node fails to answer', async () => {
+      const account = createAccount(PATH, {
+        ExecuteTransaction: () => {
+          throw Object.assign(new Error('unavailable'), { code: 'UNAVAILABLE' })
+        }
+      })
+
+      await expect(account.sendTransaction({ to: RECIPIENT, value: 1_000 }))
+        .rejects.toThrow(ProviderError)
+    })
+
+    test('should throw if the account is not connected to a provider', async () => {
+      const account = new WalletAccountSui(SEED_PHRASE, PATH)
+
+      const promise = account.sendTransaction({ to: RECIPIENT, value: 1_000 })
+
+      await expect(promise).rejects.toThrow(ProviderRequiredError)
+      await expect(promise).rejects.toThrow('The wallet must be connected to a provider to send transactions.')
+    })
+
+    test('should throw an assertion error once the key has been erased', async () => {
+      const account = createAccount()
+
+      // Stands in for dispose(), which is not implemented yet.
+      account._rawPrivateKey = undefined
+
+      await expect(account.sendTransaction({ to: RECIPIENT, value: 1_000 }))
+        .rejects.toThrow(AssertionError)
+    })
+  })
+
+  describe('transfer', () => {
+    const TRANSFER = { token: TOKEN, recipient: RECIPIENT, amount: 1 }
+
+    test('should return the hash and the fee of the transfer', async () => {
+      const account = createAccount()
+
+      await expect(account.transfer(TRANSFER)).resolves.toEqual({ hash: DIGEST, fee: MOCKED_FEE })
+    })
+
+    test('should execute the transfer it quoted', async () => {
+      const transport = createTransport()
+      const account = new WalletAccountSui(SEED_PHRASE, PATH, { transport, network: 'mainnet' })
+
+      await account.transfer(TRANSFER)
+
+      const [method, request] = transport.unary.mock.calls.at(-1)
+      const [, quoted] = transport.unary.mock.calls.at(-2)
+
+      expect(method.name).toBe('ExecuteTransaction')
+      expect(request.transaction.bcs.value).toEqual(quoted.transaction.bcs.value)
+    })
+
+    test('should throw if the fee exceeds the maximum transfer fee', async () => {
+      const account = new WalletAccountSui(SEED_PHRASE, PATH, {
+        transport: createTransport(),
+        network: 'mainnet',
+        transferMaxFee: MOCKED_FEE - 1n
+      })
+
+      const promise = account.transfer(TRANSFER)
+
+      await expect(promise).rejects.toThrow(MaximumFeeExceededError)
+      await expect(promise).rejects.toThrow('Exceeded maximum fee cost for transfer operation.')
+    })
+
+    test('should not execute a transfer that exceeds the maximum fee', async () => {
+      const transport = createTransport()
+      const account = new WalletAccountSui(SEED_PHRASE, PATH, {
+        transport,
+        network: 'mainnet',
+        transferMaxFee: MOCKED_FEE - 1n
+      })
+
+      await expect(account.transfer(TRANSFER)).rejects.toThrow(MaximumFeeExceededError)
+
+      expect(transport.unary.mock.calls.map(([method]) => method.name)).not.toContain('ExecuteTransaction')
+    })
+
+    test('should transfer when the fee is the maximum transfer fee', async () => {
+      const account = new WalletAccountSui(SEED_PHRASE, PATH, {
+        transport: createTransport(),
+        network: 'mainnet',
+        transferMaxFee: MOCKED_FEE
+      })
+
+      await expect(account.transfer(TRANSFER)).resolves.toEqual({ hash: DIGEST, fee: MOCKED_FEE })
+    })
+
+    test('should throw a transfer error when the account holds too few tokens', async () => {
+      const account = createAccount(PATH, { ListOwnedObjects: () => ({ objects: [] }) })
+
+      const promise = account.transfer({ ...TRANSFER, amount: 1_000 })
+
+      await expect(promise).rejects.toThrow(TransferError)
+      await expect(promise).rejects.toMatchObject({ reason: TransferErrorReason.INSUFFICIENT_TOKEN_BALANCE })
+    })
+
+    test('should throw a value error for a malformed token', async () => {
+      const account = createAccount()
+
+      await expect(account.transfer({ ...TRANSFER, token: 'not-a-type' })).rejects.toThrow(ValueError)
+    })
+
+    test('should throw if the account is not connected to a provider', async () => {
+      const account = new WalletAccountSui(SEED_PHRASE, PATH)
+
+      const promise = account.transfer(TRANSFER)
+
+      await expect(promise).rejects.toThrow(ProviderRequiredError)
+      await expect(promise).rejects.toThrow('The wallet must be connected to a provider to transfer tokens.')
+    })
+
+    test('should throw an assertion error once the key has been erased', async () => {
+      const account = createAccount()
+
+      // Stands in for dispose(), which is not implemented yet.
+      account._rawPrivateKey = undefined
+
+      await expect(account.transfer(TRANSFER)).rejects.toThrow(AssertionError)
+    })
+  })
+
   describe('toReadOnlyAccount', () => {
     test('should return a read-only copy of the account', async () => {
       const account = createAccount()
@@ -426,13 +720,6 @@ describe('WalletAccountSui', () => {
       ['dispose', () => account.dispose()]
     ])('%s should throw a not implemented error', (_, call) => {
       expect(call).toThrow(NotImplementedError)
-    })
-
-    test.each([
-      ['sendTransaction', () => account.sendTransaction({})],
-      ['transfer', () => account.transfer({})]
-    ])('%s should reject with a not implemented error', async (_, call) => {
-      await expect(call()).rejects.toThrow(NotImplementedError)
     })
   })
 })

@@ -55,6 +55,7 @@ import { isValidTransactionDigest } from '@mysten/sui/utils'
  * @property {string} [rpcUrl] - The provider's rpc url.
  * @property {RpcTransport} [transport] - A grpc transport to talk to the provider through, used instead of the one built from `rpcUrl`.
  * @property {Network} [network] - The name of the network to use (default: "mainnet").
+ * @property {number | bigint} [transactionMaxFee] - The maximum fee amount for sending transactions.
  * @property {number | bigint} [transferMaxFee] - The maximum fee amount for transfer operations.
  */
 
@@ -121,13 +122,13 @@ const INSUFFICIENT_BALANCE_MESSAGE = /insufficient (sui )?balance|insufficientco
 const INSUFFICIENT_TOKEN_BALANCE_MESSAGE = /^insufficient balance of/i
 
 /**
- * Turns an error raised while resolving a transaction into the matching wallet
- * development kit error.
+ * Turns an error raised while resolving, simulating or executing a transaction
+ * into the matching wallet development kit error.
  *
  * @param {*} error - The error thrown by the sdk.
  * @returns {ValueError | ProviderError | TransactionError} The wallet development kit error.
  */
-function toTransactionError (error) {
+export function toTransactionError (error) {
   if (INSUFFICIENT_BALANCE_MESSAGE.test(error?.message)) {
     return new TransactionError(error.message, { reason: TransactionErrorReason.INSUFFICIENT_BALANCE, cause: error })
   }
@@ -146,6 +147,34 @@ function toTransactionError (error) {
   }
 
   return new ValueError(error?.message ?? 'The transaction is not valid.', { cause: error })
+}
+
+/**
+ * Turns an error raised while quoting or performing a transfer into the
+ * matching wallet development kit error. A transaction that cannot execute is
+ * reported as the transfer it was carrying out.
+ *
+ * @param {*} error - The error raised by the transfer.
+ * @returns {WdkError} The wallet development kit error.
+ */
+export function toTransferError (error) {
+  if (error instanceof TransactionError) {
+    let reason
+
+    if (INSUFFICIENT_TOKEN_BALANCE_MESSAGE.test(error.message)) {
+      reason = TransferErrorReason.INSUFFICIENT_TOKEN_BALANCE
+    } else if (error.reason === TransactionErrorReason.INSUFFICIENT_BALANCE) {
+      reason = TransferErrorReason.INSUFFICIENT_BALANCE
+    }
+
+    return new TransferError(error.message, { reason, cause: error })
+  }
+
+  if (error instanceof WdkError) {
+    return error
+  }
+
+  return new ValueError(error?.message ?? 'The transfer options are not valid.', { cause: error })
 }
 
 /**
@@ -316,7 +345,6 @@ export default class WalletAccountReadOnlySui extends WalletAccountReadOnly {
    *
    * @param {SuiTransferOptions} options - The transfer's options.
    * @returns {Promise<Omit<TransferResult, 'hash'>>} The transfer's quotes.
-   * @throws {ValueError} If the transfer options are not valid.
    * @throws {ProviderRequiredError} If the account is not connected to a provider.
    * @throws {TransferError} If the transfer fails to execute.
    */
@@ -325,40 +353,38 @@ export default class WalletAccountReadOnlySui extends WalletAccountReadOnly {
       throw new ProviderRequiredError('The wallet must be connected to a provider to quote transfer operations.')
     }
 
-    const address = await this.getAddress()
-
     try {
-      const tx = new Transaction()
-
-      tx.setSender(address)
-
-      tx.transferObjects(
-        [coinWithBalance({ balance: options.amount, type: options.token })],
-        options.recipient
-      )
+      const tx = await this._getTransferTransaction(options)
 
       const result = await this.quoteSendTransaction(tx)
 
       return result
     } catch (error) {
-      if (error instanceof TransactionError) {
-        let reason
-
-        if (INSUFFICIENT_TOKEN_BALANCE_MESSAGE.test(error.message)) {
-          reason = TransferErrorReason.INSUFFICIENT_TOKEN_BALANCE
-        } else if (error.reason === TransactionErrorReason.INSUFFICIENT_BALANCE) {
-          reason = TransferErrorReason.INSUFFICIENT_BALANCE
-        }
-
-        throw new TransferError(error.message, { reason, cause: error })
-      }
-
-      if (error instanceof WdkError) {
-        throw error
-      }
-
-      throw new ValueError(error?.message ?? 'The transfer options are not valid.', { cause: error })
+      throw toTransferError(error)
     }
+  }
+
+  /**
+   * Builds the transaction a transfer is carried out with.
+   *
+   * @protected
+   * @param {SuiTransferOptions} options - The transfer's options.
+   * @returns {Promise<Transaction>} The transfer's transaction.
+   * @throws {ValueError} If the transfer options are not valid.
+   */
+  async _getTransferTransaction (options) {
+    const address = await this.getAddress()
+
+    const tx = new Transaction()
+
+    tx.setSender(address)
+
+    tx.transferObjects(
+      [coinWithBalance({ balance: options.amount, type: options.token })],
+      options.recipient
+    )
+
+    return tx
   }
 
   /**
