@@ -251,6 +251,22 @@ describe('@tetherto/wdk-wallet-sui', () => {
     })
   })
 
+  describe('getTransactionReceipt', () => {
+    test('should return the native receipt', async () => {
+      const receipt = await readOnlyAccount.getTransactionReceipt(DIGEST)
+
+      expect(receipt.digest).toBe(DIGEST)
+      expect(receipt.effects).toBeDefined()
+      expect(receipt.checkpoint).toBeDefined()
+    })
+
+    test('should return null for an unknown digest', async () => {
+      const receipt = await readOnlyAccount.getTransactionReceipt('11111111111111111111111111111111')
+
+      expect(receipt).toBeNull()
+    })
+  })
+
   describe('verify', () => {
     const MESSAGE = 'Dummy message to sign.'
     const SIGNER = new Ed25519Keypair();

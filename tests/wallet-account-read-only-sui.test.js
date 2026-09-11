@@ -506,6 +506,66 @@ describe('WalletAccountReadOnlySui', () => {
   })
 
   describe('getTransactionReceipt', () => {
+    test('should return the native receipt', async () => {
+      const account = createAccount()
+
+      const receipt = await account.getTransactionReceipt(DIGEST)
+
+      expect(receipt.digest).toBe(DIGEST)
+      expect(receipt.checkpoint).toBe(DUMMY_CHECKPOINT)
+      expect(receipt.effects.status).toEqual({ success: true })
+    })
+
+    test('should read the fields a native receipt is made of', async () => {
+      const transport = createTransport()
+      const account = new WalletAccountReadOnlySui(ADDRESS, { transport })
+
+      await account.getTransactionReceipt(DIGEST)
+
+      expect(transport.unary).toHaveBeenCalledWith(
+        expect.objectContaining({ name: 'GetTransaction' }),
+        {
+          digest: DIGEST,
+          readMask: { paths: ['digest', 'signatures', 'checkpoint', 'timestamp', 'effects', 'balance_changes'] }
+        },
+        expect.anything()
+      )
+    })
+
+    test('should return null for an unknown digest', async () => {
+      const account = createAccount({
+        GetTransaction: () => { throw grpcError('NOT_FOUND', `Transaction ${DIGEST} not found`) }
+      })
+
+      await expect(account.getTransactionReceipt(DIGEST)).resolves.toBeNull()
+    })
+
+    test('should return null for an empty response', async () => {
+      const account = createAccount({ GetTransaction: () => ({}) })
+
+      await expect(account.getTransactionReceipt(DIGEST)).resolves.toBeNull()
+    })
+
+    test('should throw a value error for a malformed digest', async () => {
+      const account = createAccount()
+
+      const promise = account.getTransactionReceipt('not-a-digest')
+
+      await expect(promise).rejects.toThrow(ValueError)
+      await expect(promise).rejects.toThrow("'not-a-digest' is not a valid transaction digest.")
+    })
+
+    test('should throw a provider error if the node fails to answer', async () => {
+      const account = createAccount({
+        GetTransaction: () => { throw grpcError('UNAVAILABLE', 'node is down') }
+      })
+
+      const promise = account.getTransactionReceipt(DIGEST)
+
+      await expect(promise).rejects.toThrow(ProviderError)
+      await expect(promise).rejects.toMatchObject({ reason: ProviderErrorReason.NETWORK_ERROR })
+    })
+
     test('should throw if the account is not connected to a provider', async () => {
       const account = new WalletAccountReadOnlySui(ADDRESS)
 

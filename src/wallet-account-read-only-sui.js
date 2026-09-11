@@ -441,18 +441,39 @@ export default class WalletAccountReadOnlySui extends WalletAccountReadOnly {
   /**
    * Returns a transaction's receipt.
    *
-   * @param {string} hash - The transaction's hash.
-   * @returns {Promise<*>} – The receipt, or null if the transaction has not been included in a block yet.
+   * @deprecated Use {@link getTransaction} instead, which returns a normalized, finality-based receipt. The native receipt stays available on the `receipt` field of its return value.
+   * @param {string} hash - The transaction's digest.
+   * @returns {Promise<ExecutedTransaction | null>} The receipt, or null if the transaction has not been executed yet.
+   * @throws {ValueError} If the digest is not valid.
    * @throws {ProviderRequiredError} If the account is not connected to a provider.
+   * @throws {ProviderError} If the provider fails to fetch the transaction's receipt.
    */
   async getTransactionReceipt (hash) {
     if (!this._client) {
       throw new ProviderRequiredError('The wallet must be connected to a provider to fetch transaction receipts.')
     }
 
-    const { response } = await this._client.getTransaction({ digest: hash })
+    if (!isValidTransactionDigest(hash)) {
+      throw new ValueError(`'${hash}' is not a valid transaction digest.`)
+    }
 
-    return response
+    let response
+
+    try {
+      ({ response } = await this._client.ledgerService.getTransaction({
+        digest: hash,
+        readMask: { paths: ['digest', 'signatures', 'checkpoint', 'timestamp', 'effects', 'balance_changes'] }
+      }))
+    } catch (error) {
+      // The node only knows a digest once the transaction has been executed.
+      if (error?.code === 'NOT_FOUND') {
+        return null
+      }
+
+      throw toClientError(error)
+    }
+
+    return response.transaction || null
   }
 
   /**
