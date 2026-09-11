@@ -14,10 +14,10 @@
 
 'use strict'
 
-import { NotImplementedError, ValueError } from '@tetherto/wdk-wallet'
+import { AssertionError, NotImplementedError, ValueError } from '@tetherto/wdk-wallet'
 
 import { Ed25519Keypair } from '@mysten/sui/keypairs/ed25519'
-import { decodeSuiPrivateKey } from '@mysten/sui/cryptography'
+import { decodeSuiPrivateKey, toSerializedSignature } from '@mysten/sui/cryptography'
 
 import * as bip39 from 'bip39'
 
@@ -163,11 +163,28 @@ export default class WalletAccountSui extends WalletAccountReadOnlySui {
   /**
    * Signs a message.
    *
+   * The signature is serialized the way sui expects it, as the base64 of
+   * `flag || signature || public key`, so it carries the key it is verified
+   * against.
+   *
    * @param {string} message - The message to sign.
    * @returns {Promise<string>} The message's signature.
+   * @throws {AssertionError} If the account has been disposed.
    */
   async sign (message) {
-    throw new NotImplementedError('sign(message)')
+    if (!this._rawPrivateKey) {
+      throw new AssertionError('The wallet account has been disposed.')
+    }
+
+    const keypair = Ed25519Keypair.fromSecretKey(this._rawPrivateKey)
+
+    const signature = await keypair.sign(new TextEncoder().encode(message))
+
+    return toSerializedSignature({
+      signature,
+      signatureScheme: 'ED25519',
+      publicKey: keypair.getPublicKey()
+    })
   }
 
   /**

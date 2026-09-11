@@ -5,7 +5,7 @@ import * as bip39 from 'bip39'
 
 import WalletAccountSui from '../src/wallet-account-sui.js'
 import WalletAccountReadOnlySui from '../src/wallet-account-read-only-sui.js'
-import { NotImplementedError, ValueError } from '@tetherto/wdk-wallet'
+import { AssertionError, NotImplementedError, ValueError } from '@tetherto/wdk-wallet'
 
 const SEED_PHRASE = 'cook voyage document eight skate token alien guide drink uncle term abuse'
 
@@ -179,6 +179,71 @@ describe('WalletAccountSui', () => {
     })
   })
 
+  describe('sign', () => {
+    const MESSAGE = 'Dummy message to sign.'
+
+    // The signatures ACCOUNT_0 produces: ed25519 is deterministic, so a given
+    // key and message always sign to the same bytes.
+    const SIGNATURE = 'AAVX/HlNuaycwCx7hG3MBwM1REHHNOcMvj0ZDKGUOxUQ/CyNHfFdz+ci4wA5UunhGEihv8HHPO6r24SHNzYIwwCI5PA4d1el4x3EFS3uhDSHtrxv43GAvhABs72jkR1f3w=='
+    const OTHER_SIGNATURE = 'AP/LQmYN/McZIpUo6UpJGMUQITOm4ki2pdO9LK09hAk3WAa3Zr+yErAthXZJBg17iWdcW74h2QjRXDHV6qrZGgSI5PA4d1el4x3EFS3uhDSHtrxv43GAvhABs72jkR1f3w=='
+
+    test('should produce a consistent signature for a message', async () => {
+      const account = new WalletAccountSui(SEED_PHRASE, ACCOUNT_0.path)
+
+      expect(await account.sign(MESSAGE)).toBe(SIGNATURE)
+      expect(await account.sign(MESSAGE)).toBe(SIGNATURE)
+    })
+
+    test('should produce different signatures for different messages', async () => {
+      const account = new WalletAccountSui(SEED_PHRASE, ACCOUNT_0.path)
+
+      expect(await account.sign(MESSAGE)).toBe(SIGNATURE)
+      expect(await account.sign('Another message.')).toBe(OTHER_SIGNATURE)
+    })
+
+    test('should produce different signatures for different accounts', async () => {
+      const account = new WalletAccountSui(SEED_PHRASE, ACCOUNT_0.path)
+      const other = new WalletAccountSui(SEED_PHRASE, ACCOUNT_1.path)
+
+      expect(await other.sign(MESSAGE)).not.toBe(await account.sign(MESSAGE))
+    })
+
+    test('should produce a signature the account verifies', async () => {
+      const account = new WalletAccountSui(SEED_PHRASE, ACCOUNT_0.path)
+
+      const signature = await account.sign(MESSAGE)
+
+      expect(await account.verify(MESSAGE, signature)).toBe(true)
+    })
+
+    test('should not produce a signature that verifies another message', async () => {
+      const account = new WalletAccountSui(SEED_PHRASE, ACCOUNT_0.path)
+
+      const signature = await account.sign(MESSAGE)
+
+      expect(await account.verify('Another message.', signature)).toBe(false)
+    })
+
+    test('should not produce a signature that verifies against another account', async () => {
+      const account = new WalletAccountSui(SEED_PHRASE, ACCOUNT_0.path)
+      const other = new WalletAccountSui(SEED_PHRASE, ACCOUNT_1.path)
+
+      const signature = await account.sign(MESSAGE)
+
+      expect(await other.verify(MESSAGE, signature)).toBe(false)
+    })
+
+    test('should throw an assertion error once the key has been erased', async () => {
+      const account = new WalletAccountSui(SEED_PHRASE, ACCOUNT_0.path)
+
+      // Stands in for dispose(), which is not implemented yet.
+      account._rawPrivateKey = undefined
+
+      await expect(account.sign(MESSAGE)).rejects.toThrow(AssertionError)
+      await expect(account.sign(MESSAGE)).rejects.toThrow('The wallet account has been disposed.')
+    })
+  })
+
   describe('Not implemented yet', () => {
     const account = new WalletAccountSui(SEED_PHRASE, PATH)
 
@@ -189,7 +254,6 @@ describe('WalletAccountSui', () => {
     })
 
     test.each([
-      ['sign', () => account.sign('message')],
       ['signTransaction', () => account.signTransaction({})],
       ['sendTransaction', () => account.sendTransaction({})],
       ['transfer', () => account.transfer({})],
