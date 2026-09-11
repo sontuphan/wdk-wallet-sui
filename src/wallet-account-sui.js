@@ -280,32 +280,7 @@ export default class WalletAccountSui extends WalletAccountReadOnlySui {
       throw new MaximumFeeExceededError('Exceeded maximum fee cost for transaction operation.')
     }
 
-    let result
-
-    try {
-      result = await this._client.core.executeTransaction({
-        transaction: fromBase64(signed.bytes),
-        signatures: [signed.signature],
-        include: { effects: true }
-      })
-    } catch (error) {
-      throw toTransactionError(error)
-    }
-
-    if (result.$kind === 'FailedTransaction') {
-      const { digest, effects } = result.FailedTransaction
-
-      throw new TransactionError(
-        effects?.status?.error?.message ?? `The transaction '${digest}' failed to execute.`,
-        { cause: result }
-      )
-    }
-
-    const { digest, effects } = result.Transaction
-
-    const { computationCost = 0, storageCost = 0, storageRebate = 0 } = effects?.gasUsed ?? { }
-
-    return { hash: digest, fee: BigInt(computationCost) + BigInt(storageCost) - BigInt(storageRebate) }
+    return await this._executeTransaction(signed)
   }
 
   /**
@@ -341,9 +316,11 @@ export default class WalletAccountSui extends WalletAccountReadOnlySui {
         throw new MaximumFeeExceededError('Exceeded maximum fee cost for transfer operation.')
       }
 
-      const result = await this.sendTransaction(signed)
+      if (this._config.transactionMaxFee !== undefined && fee > this._config.transactionMaxFee) {
+        throw new MaximumFeeExceededError('Exceeded maximum fee cost for transaction operation.')
+      }
 
-      return result
+      return await this._executeTransaction(signed)
     } catch (error) {
       throw toTransferError(error)
     }
@@ -379,5 +356,48 @@ export default class WalletAccountSui extends WalletAccountReadOnlySui {
     }
 
     this._rawPrivateKey = undefined
+  }
+
+  /**
+   * Executes a signed transaction.
+   *
+   * The fee is read back from the execution rather than from the quote that
+   * preceded it, so it is the one the node charged.
+   *
+   * @private
+   * @param {SignatureWithBytes} signed - The signed transaction.
+   * @returns {Promise<TransactionResult>} The transaction's result.
+   * @throws {ProviderError} If the provider fails to perform the transaction.
+   * @throws {TransactionError} If the transaction fails to execute.
+   */
+  async _executeTransaction (signed) {
+    let result
+
+    try {
+      result = await this._client.core.executeTransaction({
+        transaction: fromBase64(signed.bytes),
+        signatures: [signed.signature],
+        include: { effects: true }
+      })
+    } catch (error) {
+      throw toTransactionError(error)
+    }
+
+    if (result.$kind === 'FailedTransaction') {
+      const { digest, effects } = result.FailedTransaction
+
+      throw new TransactionError(
+        effects?.status?.error?.message ?? `The transaction '${digest}' failed to execute.`,
+        { cause: result }
+      )
+    }
+
+    const { digest, effects } = result.Transaction
+
+    // The transaction has executed by now, so a missing gas summary must not
+    // cost the caller the digest it is reported under.
+    const { computationCost = 0, storageCost = 0, storageRebate = 0 } = effects?.gasUsed ?? { }
+
+    return { hash: digest, fee: BigInt(computationCost) + BigInt(storageCost) - BigInt(storageRebate) }
   }
 }

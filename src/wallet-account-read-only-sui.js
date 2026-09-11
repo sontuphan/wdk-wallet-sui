@@ -368,76 +368,6 @@ export default class WalletAccountReadOnlySui extends WalletAccountReadOnly {
   }
 
   /**
-   * Builds the transaction a transfer is carried out with.
-   *
-   * @protected
-   * @param {SuiTransferOptions} options - The transfer's options.
-   * @returns {Promise<Transaction>} The transfer's transaction.
-   * @throws {ValueError} If the transfer options are not valid.
-   */
-  async _getTransferTransaction (options) {
-    const address = await this.getAddress()
-
-    const tx = new Transaction()
-
-    tx.setSender(address)
-
-    tx.transferObjects(
-      [coinWithBalance({ balance: options.amount, type: options.token })],
-      options.recipient
-    )
-
-    return tx
-  }
-
-  /**
-   * Resolves a transaction into the bytes that are simulated, signed and
-   * executed.
-   *
-   * A {@link SimpleSuiTransaction} is first turned into the sui send it
-   * describes, and a transaction that doesn't name its sender is sent from this
-   * account, which sets the sender on the given transaction.
-   *
-   * Resolving is a round trip to the provider rather than a local encoding
-   * step: the node runs the transaction to pick the gas coins and set the gas
-   * price and budget, which is why a transaction that cannot execute is
-   * reported here.
-   *
-   * @protected
-   * @param {SuiTransaction} tx - The transaction.
-   * @returns {Promise<Uint8Array>} The bcs-encoded transaction.
-   * @throws {ValueError} If the transaction is not valid.
-   * @throws {ProviderRequiredError} If the account is not connected to a provider.
-   * @throws {ProviderError} If the provider fails to resolve the transaction.
-   * @throws {TransactionError} If the transaction cannot execute.
-   */
-  async _buildTransaction (tx) {
-    if (!this._client) {
-      throw new ProviderRequiredError('The wallet must be connected to a provider to build transactions.')
-    }
-
-    const address = await this.getAddress()
-
-    try {
-      if (!(tx instanceof Transaction)) {
-        const nativeTx = new Transaction()
-
-        const [coin] = nativeTx.splitCoins(nativeTx.gas, [tx.value])
-
-        nativeTx.transferObjects([coin], tx.to)
-
-        tx = nativeTx
-      }
-
-      tx.setSenderIfNotSet(address)
-
-      return await tx.build({ client: this._client })
-    } catch (error) {
-      throw toTransactionError(error)
-    }
-  }
-
-  /**
    * Returns a transaction's receipt.
    *
    * @deprecated Use {@link getTransaction} instead, which returns a normalized, finality-based receipt. The native receipt stays available on the `receipt` field of its return value.
@@ -591,6 +521,76 @@ export default class WalletAccountReadOnlySui extends WalletAccountReadOnly {
       return address === pubkey.toSuiAddress()
     } catch {
       return false
+    }
+  }
+
+  /**
+   * Builds the transaction a transfer is carried out with.
+   *
+   * @protected
+   * @param {SuiTransferOptions} options - The transfer's options.
+   * @returns {Promise<Transaction>} The transfer's transaction.
+   * @throws {ValueError} If the transfer options are not valid.
+   */
+  async _getTransferTransaction (options) {
+    const address = await this.getAddress()
+
+    const tx = new Transaction()
+
+    tx.setSender(address)
+
+    tx.transferObjects(
+      [coinWithBalance({ balance: options.amount, type: options.token })],
+      options.recipient
+    )
+
+    return tx
+  }
+
+  /**
+   * Resolves a transaction into the bytes that are simulated, signed and
+   * executed.
+   *
+   * A {@link SimpleSuiTransaction} is first turned into the sui send it
+   * describes, and a transaction that doesn't name its sender is sent from this
+   * account, which sets the sender on the given transaction.
+   *
+   * Resolving is a round trip to the provider rather than a local encoding
+   * step: the node runs the transaction to pick the gas coins and set the gas
+   * price and budget, which is why a transaction that cannot execute is
+   * reported here.
+   *
+   * @protected
+   * @param {SuiTransaction} tx - The transaction.
+   * @returns {Promise<Uint8Array>} The bcs-encoded transaction.
+   * @throws {ValueError} If the transaction is not valid.
+   * @throws {ProviderRequiredError} If the account is not connected to a provider.
+   * @throws {ProviderError} If the provider fails to resolve the transaction.
+   * @throws {TransactionError} If the transaction cannot execute.
+   */
+  async _buildTransaction (tx) {
+    if (!this._client) {
+      throw new ProviderRequiredError('The wallet must be connected to a provider to build transactions.')
+    }
+
+    const address = await this.getAddress()
+
+    try {
+      if (!(tx instanceof Transaction)) {
+        const nativeTx = new Transaction()
+
+        const [coin] = nativeTx.splitCoins(nativeTx.gas, [tx.value])
+
+        nativeTx.transferObjects([coin], tx.to)
+
+        tx = nativeTx
+      }
+
+      tx.setSenderIfNotSet(address)
+
+      return await tx.build({ client: this._client })
+    } catch (error) {
+      throw toTransactionError(error)
     }
   }
 }

@@ -140,6 +140,19 @@ export default class WalletAccountSui extends WalletAccountReadOnlySui implement
      * carry on working, but everything that needs the key throws from here on.
      */
     dispose(): void;
+    /**
+     * Executes a signed transaction.
+     *
+     * The fee is read back from the execution rather than from the quote that
+     * preceded it, so it is the one the node charged.
+     *
+     * @private
+     * @param {SignatureWithBytes} signed - The signed transaction.
+     * @returns {Promise<TransactionResult>} The transaction's result.
+     * @throws {ProviderError} If the provider fails to perform the transaction.
+     * @throws {TransactionError} If the transaction fails to execute.
+     */
+    private _executeTransaction;
 }
 export type IWalletAccount = import("@tetherto/wdk-wallet").IWalletAccount;
 export type KeyPair = import("@tetherto/wdk-wallet").KeyPair;

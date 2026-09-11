@@ -72,37 +72,6 @@ export default class WalletAccountReadOnlySui extends WalletAccountReadOnly {
      */
     quoteSendTransaction(tx: SuiTransaction): Promise<Omit<TransactionResult, "hash">>;
     /**
-     * Builds the transaction a transfer is carried out with.
-     *
-     * @protected
-     * @param {SuiTransferOptions} options - The transfer's options.
-     * @returns {Promise<Transaction>} The transfer's transaction.
-     * @throws {ValueError} If the transfer options are not valid.
-     */
-    protected _getTransferTransaction(options: SuiTransferOptions): Promise<Transaction>;
-    /**
-     * Resolves a transaction into the bytes that are simulated, signed and
-     * executed.
-     *
-     * A {@link SimpleSuiTransaction} is first turned into the sui send it
-     * describes, and a transaction that doesn't name its sender is sent from this
-     * account, which sets the sender on the given transaction.
-     *
-     * Resolving is a round trip to the provider rather than a local encoding
-     * step: the node runs the transaction to pick the gas coins and set the gas
-     * price and budget, which is why a transaction that cannot execute is
-     * reported here.
-     *
-     * @protected
-     * @param {SuiTransaction} tx - The transaction.
-     * @returns {Promise<Uint8Array>} The bcs-encoded transaction.
-     * @throws {ValueError} If the transaction is not valid.
-     * @throws {ProviderRequiredError} If the account is not connected to a provider.
-     * @throws {ProviderError} If the provider fails to resolve the transaction.
-     * @throws {TransactionError} If the transaction cannot execute.
-     */
-    protected _buildTransaction(tx: SuiTransaction): Promise<Uint8Array>;
-    /**
      * Returns a transaction's receipt.
      *
      * @deprecated Use {@link getTransaction} instead, which returns a normalized, finality-based receipt. The native receipt stays available on the `receipt` field of its return value.
@@ -139,6 +108,37 @@ export default class WalletAccountReadOnlySui extends WalletAccountReadOnly {
      * @throws {ValueError} If the signature is not correctly encoded.
      */
     verifyPersonalMessage(message: string, signature: string): Promise<boolean>;
+    /**
+     * Builds the transaction a transfer is carried out with.
+     *
+     * @protected
+     * @param {SuiTransferOptions} options - The transfer's options.
+     * @returns {Promise<Transaction>} The transfer's transaction.
+     * @throws {ValueError} If the transfer options are not valid.
+     */
+    protected _getTransferTransaction(options: SuiTransferOptions): Promise<Transaction>;
+    /**
+     * Resolves a transaction into the bytes that are simulated, signed and
+     * executed.
+     *
+     * A {@link SimpleSuiTransaction} is first turned into the sui send it
+     * describes, and a transaction that doesn't name its sender is sent from this
+     * account, which sets the sender on the given transaction.
+     *
+     * Resolving is a round trip to the provider rather than a local encoding
+     * step: the node runs the transaction to pick the gas coins and set the gas
+     * price and budget, which is why a transaction that cannot execute is
+     * reported here.
+     *
+     * @protected
+     * @param {SuiTransaction} tx - The transaction.
+     * @returns {Promise<Uint8Array>} The bcs-encoded transaction.
+     * @throws {ValueError} If the transaction is not valid.
+     * @throws {ProviderRequiredError} If the account is not connected to a provider.
+     * @throws {ProviderError} If the provider fails to resolve the transaction.
+     * @throws {TransactionError} If the transaction cannot execute.
+     */
+    protected _buildTransaction(tx: SuiTransaction): Promise<Uint8Array>;
 }
 export type TransactionReceipt = import("@tetherto/wdk-wallet").TransactionReceipt;
 export type TransactionResult = import("@tetherto/wdk-wallet").TransactionResult;

@@ -615,6 +615,46 @@ describe('WalletAccountSui', () => {
       expect(request.transaction.bcs.value).toEqual(quoted.transaction.bcs.value)
     })
 
+    test('should quote the transfer once', async () => {
+      const transport = createTransport()
+      const account = new WalletAccountSui(SEED_PHRASE, PATH, { transport, network: 'mainnet' })
+
+      await account.transfer(TRANSFER)
+
+      expect(transport.unary.mock.calls.map(([method]) => method.name)).toEqual([
+        'GetBalance',
+        'ListOwnedObjects',
+        'SimulateTransaction',
+        'SimulateTransaction',
+        'ExecuteTransaction'
+      ])
+    })
+
+    test('should refuse a transfer whose fee exceeds the maximum transaction fee', async () => {
+      const account = new WalletAccountSui(SEED_PHRASE, PATH, {
+        transport: createTransport(),
+        network: 'mainnet',
+        transactionMaxFee: MOCKED_FEE - 1n
+      })
+
+      const promise = account.transfer(TRANSFER)
+
+      await expect(promise).rejects.toThrow(MaximumFeeExceededError)
+      await expect(promise).rejects.toThrow('Exceeded maximum fee cost for transaction operation.')
+    })
+
+    test('should report the transfer cap first when both are exceeded', async () => {
+      const account = new WalletAccountSui(SEED_PHRASE, PATH, {
+        transport: createTransport(),
+        network: 'mainnet',
+        transferMaxFee: MOCKED_FEE - 1n,
+        transactionMaxFee: MOCKED_FEE - 1n
+      })
+
+      await expect(account.transfer(TRANSFER))
+        .rejects.toThrow('Exceeded maximum fee cost for transfer operation.')
+    })
+
     test('should throw if the fee exceeds the maximum transfer fee', async () => {
       const account = new WalletAccountSui(SEED_PHRASE, PATH, {
         transport: createTransport(),
