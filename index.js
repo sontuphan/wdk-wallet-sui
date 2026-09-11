@@ -18,12 +18,14 @@
 /** @typedef {import('@tetherto/wdk-wallet').TransactionResult} TransactionResult */
 /** @typedef {import('@tetherto/wdk-wallet').TransferResult} TransferResult */
 
+/** @typedef {import('./src/wallet-account-read-only-sui.js').SimpleSuiTransaction} SimpleSuiTransaction */
 /** @typedef {import('./src/wallet-account-read-only-sui.js').SuiTransaction} SuiTransaction */
+/** @typedef {import('./src/wallet-account-read-only-sui.js').SuiTransactionReceipt} SuiTransactionReceipt */
 /** @typedef {import('./src/wallet-account-read-only-sui.js').SuiTransferOptions} SuiTransferOptions */
 /** @typedef {import('./src/wallet-account-read-only-sui.js').SuiWalletConfig} SuiWalletConfig */
 
-// export { default } from './src/wallet-manager-evm.js'
+export { default } from './src/wallet-manager-sui.js'
 
-export { default as WalletAccountReadOnlyEvm } from './src/wallet-account-read-only-sui.js'
+export { default as WalletAccountReadOnlySui } from './src/wallet-account-read-only-sui.js'
 
-// export { default as WalletAccountEvm } from './src/wallet-account-evm.js'
+export { default as WalletAccountSui } from './src/wallet-account-sui.js'

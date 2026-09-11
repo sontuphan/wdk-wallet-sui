@@ -179,14 +179,14 @@ export function toTransferError (error) {
 
 /**
  * Turns an error thrown by the grpc client into the matching wallet development
- * kit error. An invalid argument is rejected on the account's behalf and never
+ * kit error. An invalid argument is rejected on the caller's behalf and never
  * reaches the ledger, so it is reported as a value error rather than as a
  * failure of the provider.
  *
  * @param {*} error - The error thrown by the grpc client.
  * @returns {ValueError | ProviderError} The wallet development kit error.
  */
-function toClientError (error) {
+export function toClientError (error) {
   const message = decodeStatusMessage(error?.message ?? 'The provider failed to answer the request.')
 
   if (error?.code === 'INVALID_ARGUMENT') {
@@ -223,18 +223,24 @@ export default class WalletAccountReadOnlySui extends WalletAccountReadOnly {
      * @protected
      * @type {SuiGrpcClient | undefined}
      */
-    this._client = undefined
+    this._client = WalletAccountReadOnlySui.createClient(config)
+  }
 
-    if (this._config.transport) {
-      this._client = new SuiGrpcClient({
-        network: config.network || 'mainnet',
-        transport: config.transport
-      })
-    } else if (this._config.rpcUrl) {
-      this._client = new SuiGrpcClient({
-        network: config.network || 'mainnet',
-        baseUrl: config.rpcUrl
-      })
+  /**
+   * Creates the client a wallet talks to a node through.
+   *
+   * @param {SuiWalletConfig} config - The configuration object.
+   * @returns {SuiGrpcClient | undefined} The client, or undefined if the configuration names no provider.
+   */
+  static createClient (config) {
+    const network = config.network || 'mainnet'
+
+    if (config.transport) {
+      return new SuiGrpcClient({ network, transport: config.transport })
+    }
+
+    if (config.rpcUrl) {
+      return new SuiGrpcClient({ network, baseUrl: config.rpcUrl })
     }
   }
 
@@ -388,10 +394,17 @@ export default class WalletAccountReadOnlySui extends WalletAccountReadOnly {
   }
 
   /**
-   * Builds a transaction into the bytes a node simulates and executes.
+   * Resolves a transaction into the bytes that are simulated, signed and
+   * executed.
    *
-   * A plain object is turned into the transfer it describes, and a transaction
-   * that doesn't name its sender is sent from this account.
+   * A {@link SimpleSuiTransaction} is first turned into the sui send it
+   * describes, and a transaction that doesn't name its sender is sent from this
+   * account, which sets the sender on the given transaction.
+   *
+   * Resolving is a round trip to the provider rather than a local encoding
+   * step: the node runs the transaction to pick the gas coins and set the gas
+   * price and budget, which is why a transaction that cannot execute is
+   * reported here.
    *
    * @protected
    * @param {SuiTransaction} tx - The transaction.
