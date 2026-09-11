@@ -1,0 +1,57 @@
+{
+  "name": "@tetherto/wdk-wallet-sui",
+  "version": "1.0.0",
+  "description": "A simple package to manage BIP-32 wallets for the sui blockchain.",
+  "keywords": [
+    "wdk",
+    "wallet",
+    "bip-32",
+    "sui"
+  ],
+  "author": "Tether",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git://github.com/tetherto/wdk-wallet-sui.git"
+  },
+  "main": "index.js",
+  "type": "module",
+  "types": "./types",
+  "scripts": {
+    "build:types": "tsc",
+    "lint": "standard --env jest",
+    "lint:fix": "standard --fix --env jest",
+    "test": "cross-env NODE_OPTIONS=--experimental-vm-modules jest",
+    "test:coverage": "cross-env NODE_OPTIONS=--experimental-vm-modules jest --coverage"
+  },
+  "exports": {
+    ".": {
+      "types": "./types/index.d.ts",
+      "bare": "./bare.js",
+      "default": "./index.js"
+    },
+    "./package": {
+      "default": "./package.json"
+    }
+  },
+  "dependencies": {
+    "@mysten/sui": "2.9.1",
+    "@tetherto/wdk-wallet": "^1.0.0-beta.19"
+  },
+  "devDependencies": {
+    "cross-env": "10.1.0",
+    "jest": "30.3.0",
+    "standard": "17.1.2",
+    "typescript": "5.9.3"
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
+  },
+  "standard": {
+    "ignore": [
+      "bare.js",
+      "tests/**/*.js"
+    ]
+  }
+}
