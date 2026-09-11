@@ -38,6 +38,8 @@
   },
   "dependencies": {
     "@mysten/sui": "2.9.1",
+    "@protobuf-ts/grpcweb-transport": "2.11.1",
+    "@tetherto/wdk-failover-provider": "1.0.0-beta.2",
     "@tetherto/wdk-wallet": "^1.0.0-beta.19",
     "bip39": "3.1.0",
     "sodium-universal": "5.0.1"

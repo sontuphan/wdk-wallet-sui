@@ -29,6 +29,11 @@ export default class WalletAccountReadOnlySui extends WalletAccountReadOnly {
     /**
      * Creates the client a wallet talks to a node through.
      *
+     * Several providers are served behind a failover transport, so a call that a
+     * node fails to answer is retried against the next one. Failing over at the
+     * transport covers every request the sdk makes, including the ones it sends
+     * through its own service clients.
+     *
      * @param {SuiWalletConfig} config - The configuration object.
      * @returns {SuiGrpcClient | undefined} The client, or undefined if the configuration names no provider.
      */
@@ -173,13 +178,17 @@ export type SuiTransferOptions = {
 };
 export type SuiWalletConfig = {
     /**
-     * - The provider's rpc url.
+     * - The provider's rpc url. An array enables failover.
      */
-    rpcUrl?: string;
+    rpcUrl?: string | string[];
     /**
-     * - A grpc transport to talk to the provider through, used instead of the one built from `rpcUrl`.
+     * - A grpc transport to talk to the provider through, used instead of the one built from `rpcUrl`. An array enables failover.
      */
-    transport?: RpcTransport;
+    transport?: RpcTransport | RpcTransport[];
+    /**
+     * - The number of failover retry attempts when more than one provider is given (default: 3).
+     */
+    retries?: number;
     /**
      * - The name of the network to use (default: "mainnet").
      */

@@ -16,6 +16,10 @@
 
 import { NoSuchElementError, ProviderError, ProviderErrorReason, ProviderRequiredError, TransactionError, TransactionErrorReason, TransferError, TransferErrorReason, ValueError, WalletAccountReadOnly, WdkError } from '@tetherto/wdk-wallet'
 
+import FailoverProvider from '@tetherto/wdk-failover-provider'
+
+import { GrpcWebFetchTransport } from '@protobuf-ts/grpcweb-transport'
+
 import { SimulationError } from '@mysten/sui/client'
 import { SuiGrpcClient } from '@mysten/sui/grpc'
 import { coinWithBalance, Transaction } from '@mysten/sui/transactions'
@@ -50,8 +54,9 @@ import { isValidTransactionDigest } from '@mysten/sui/utils'
 
 /**
  * @typedef {Object} SuiWalletConfig
- * @property {string} [rpcUrl] - The provider's rpc url.
- * @property {RpcTransport} [transport] - A grpc transport to talk to the provider through, used instead of the one built from `rpcUrl`.
+ * @property {string | string[]} [rpcUrl] - The provider's rpc url. An array enables failover.
+ * @property {RpcTransport | RpcTransport[]} [transport] - A grpc transport to talk to the provider through, used instead of the one built from `rpcUrl`. An array enables failover.
+ * @property {number} [retries] - The number of failover retry attempts when more than one provider is given (default: 3).
  * @property {Network} [network] - The name of the network to use (default: "mainnet").
  * @property {number | bigint} [transactionMaxFee] - The maximum fee amount for sending transactions.
  * @property {number | bigint} [transferMaxFee] - The maximum fee amount for transfer operations.
@@ -175,6 +180,25 @@ export function toTransferError (error) {
 }
 
 /**
+ * Wraps a transport so that it folds a call's options into its own defaults at
+ * the moment it sends the request.
+ *
+ * The generated clients merge options once, before the call, and a grpc-web
+ * transport folds its base url into that result. A failover that switched
+ * transports afterwards would keep sending every retry to the provider whose
+ * options it started with, which is the one that just failed.
+ *
+ * @param {RpcTransport} transport - The transport to wrap.
+ * @returns {RpcTransport} A transport that merges its options per request.
+ */
+function toFailoverCandidate (transport) {
+  return {
+    mergeOptions: (options) => options ?? { },
+    unary: (method, input, options) => transport.unary(method, input, transport.mergeOptions(options))
+  }
+}
+
+/**
  * Turns an error thrown by the grpc client into the matching wallet development
  * kit error. An invalid argument is rejected on the caller's behalf and never
  * reaches the ledger, so it is reported as a value error rather than as a
@@ -226,18 +250,38 @@ export default class WalletAccountReadOnlySui extends WalletAccountReadOnly {
   /**
    * Creates the client a wallet talks to a node through.
    *
+   * Several providers are served behind a failover transport, so a call that a
+   * node fails to answer is retried against the next one. Failing over at the
+   * transport covers every request the sdk makes, including the ones it sends
+   * through its own service clients.
+   *
    * @param {SuiWalletConfig} config - The configuration object.
    * @returns {SuiGrpcClient | undefined} The client, or undefined if the configuration names no provider.
    */
   static createClient (config) {
-    const network = config.network || 'mainnet'
+    const { network = 'mainnet', retries = 3 } = config
 
-    if (config.transport) {
-      return new SuiGrpcClient({ network, transport: config.transport })
-    }
+    const provider = config.transport ?? config.rpcUrl
 
-    if (config.rpcUrl) {
-      return new SuiGrpcClient({ network, baseUrl: config.rpcUrl })
+    if (Array.isArray(provider)) {
+      if (provider.length > 0) {
+        const failoverProvider = new FailoverProvider({ retries })
+
+        for (const entry of provider) {
+          const option = typeof entry === 'string'
+            ? new GrpcWebFetchTransport({ baseUrl: entry })
+            : entry
+          failoverProvider.addProvider(toFailoverCandidate(option))
+        }
+
+        return new SuiGrpcClient({ network, transport: failoverProvider.initialize() })
+      }
+    } else if (provider) {
+      const transport = typeof provider === 'string'
+        ? new GrpcWebFetchTransport({ baseUrl: provider })
+        : provider
+
+      return new SuiGrpcClient({ network, transport })
     }
   }
 

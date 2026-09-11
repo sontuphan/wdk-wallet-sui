@@ -147,6 +147,79 @@ describe('WalletAccountReadOnlySui', () => {
     })
   })
 
+  describe('failover', () => {
+    function createFailingTransport () {
+      return {
+        mergeOptions: (options) => options ?? { },
+        unary: jest.fn(async () => { throw grpcError('UNAVAILABLE', 'node is down') })
+      }
+    }
+
+    test('should answer from the next provider when one fails', async () => {
+      const failing = createFailingTransport()
+      const working = createTransport()
+
+      const account = new WalletAccountReadOnlySui(ADDRESS, { transport: [failing, working] })
+
+      expect(await account.getBalance()).toBe(DUMMY_BALANCE)
+      expect(failing.unary).toHaveBeenCalledTimes(1)
+      expect(working.unary).toHaveBeenCalledTimes(1)
+    })
+
+    test('should fail over the calls the sdk makes through its own service clients', async () => {
+      const failing = createFailingTransport()
+      const working = createTransport()
+
+      const account = new WalletAccountReadOnlySui(ADDRESS, { transport: [failing, working] })
+
+      const receipt = await account.getTransaction(DIGEST)
+
+      expect(receipt.finality).toBe('final')
+      expect(failing.unary).toHaveBeenCalledTimes(1)
+      expect(working.unary).toHaveBeenCalledTimes(1)
+    })
+
+    test('should give up once the retries are exhausted', async () => {
+      const first = createFailingTransport()
+      const second = createFailingTransport()
+
+      const account = new WalletAccountReadOnlySui(ADDRESS, { transport: [first, second], retries: 0 })
+
+      await expect(account.getBalance()).rejects.toThrow(ProviderError)
+
+      expect(first.unary).toHaveBeenCalledTimes(1)
+      expect(second.unary).not.toHaveBeenCalled()
+    })
+
+    test('should report the failure of the last provider it tried', async () => {
+      const account = new WalletAccountReadOnlySui(ADDRESS, {
+        transport: [createFailingTransport(), createFailingTransport()]
+      })
+
+      const promise = account.getBalance()
+
+      await expect(promise).rejects.toThrow(ProviderError)
+      await expect(promise).rejects.toThrow('node is down')
+    })
+
+    test('should send every call to a single provider', async () => {
+      const transport = createTransport()
+
+      const account = new WalletAccountReadOnlySui(ADDRESS, { transport: [transport] })
+
+      await account.getBalance()
+
+      expect(transport.unary).toHaveBeenCalledTimes(1)
+    })
+
+    test.each([
+      ['an empty list of urls', { rpcUrl: [] }],
+      ['an empty list of transports', { transport: [] }]
+    ])('should not connect to a provider for %s', (_, config) => {
+      expect(new WalletAccountReadOnlySui(ADDRESS, config)._client).toBeUndefined()
+    })
+  })
+
   describe('getBalance', () => {
     test('should return the sui balance in mists', async () => {
       const balance = await account.getBalance()

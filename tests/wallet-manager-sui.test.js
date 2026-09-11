@@ -69,6 +69,24 @@ describe('WalletManagerSui', () => {
       expect(() => new WalletManagerSui(signer)).toThrow('The wallet manager must be created from a seed.')
     })
 
+    test('should serve several providers behind a failover', async () => {
+      const failing = {
+        mergeOptions: (options) => options ?? { },
+        unary: jest.fn(async () => { throw Object.assign(new Error('node is down'), { code: 'UNAVAILABLE' }) })
+      }
+      const working = createTransport()
+
+      const wallet = new WalletManagerSui(SEED_PHRASE, { transport: [failing, working] })
+
+      await expect(wallet.getFeeRates()).resolves.toEqual({
+        normal: DUMMY_REFERENCE_GAS_PRICE,
+        fast: DUMMY_REFERENCE_GAS_PRICE * 2n
+      })
+
+      expect(failing.unary).toHaveBeenCalledTimes(1)
+      expect(working.unary).toHaveBeenCalledTimes(1)
+    })
+
     test('should not connect to a provider without a configuration', () => {
       const wallet = new WalletManagerSui(SEED_PHRASE)
 
