@@ -14,7 +14,7 @@
 
 'use strict'
 
-import { AssertionError, MaximumFeeExceededError, NotImplementedError, ProviderRequiredError, TransactionError, ValueError } from '@tetherto/wdk-wallet'
+import { AssertionError, MaximumFeeExceededError, ProviderRequiredError, TransactionError, ValueError } from '@tetherto/wdk-wallet'
 
 import { Ed25519Keypair } from '@mysten/sui/keypairs/ed25519'
 import { decodeSuiPrivateKey, toSerializedSignature } from '@mysten/sui/cryptography'
@@ -22,6 +22,9 @@ import { Transaction } from '@mysten/sui/transactions'
 import { fromBase64 } from '@mysten/sui/utils'
 
 import * as bip39 from 'bip39'
+
+// eslint-disable-next-line camelcase
+import { sodium_memzero } from 'sodium-universal'
 
 import WalletAccountReadOnlySui, { toTransactionError, toTransferError } from './wallet-account-read-only-sui.js'
 
@@ -366,8 +369,15 @@ export default class WalletAccountSui extends WalletAccountReadOnlySui {
 
   /**
    * Disposes the wallet account, erasing the private key from the memory.
+   *
+   * The account keeps its address and its public key, so the read-only members
+   * carry on working, but everything that needs the key throws from here on.
    */
   dispose () {
-    throw new NotImplementedError('dispose()')
+    if (this._rawPrivateKey) {
+      sodium_memzero(this._rawPrivateKey)
+    }
+
+    this._rawPrivateKey = undefined
   }
 }

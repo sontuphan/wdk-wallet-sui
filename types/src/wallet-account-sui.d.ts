@@ -135,6 +135,9 @@ export default class WalletAccountSui extends WalletAccountReadOnlySui implement
     toReadOnlyAccount(): Promise<WalletAccountReadOnlySui>;
     /**
      * Disposes the wallet account, erasing the private key from the memory.
+     *
+     * The account keeps its address and its public key, so the read-only members
+     * carry on working, but everything that needs the key throws from here on.
      */
     dispose(): void;
 }

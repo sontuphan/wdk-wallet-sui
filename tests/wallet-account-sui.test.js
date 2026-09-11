@@ -8,7 +8,7 @@ import * as bip39 from 'bip39'
 
 import WalletAccountSui from '../src/wallet-account-sui.js'
 import WalletAccountReadOnlySui from '../src/wallet-account-read-only-sui.js'
-import { AssertionError, MaximumFeeExceededError, NotImplementedError, ProviderError, ProviderRequiredError, TransactionError, TransferError, TransferErrorReason, ValueError } from '@tetherto/wdk-wallet'
+import { AssertionError, MaximumFeeExceededError, ProviderError, ProviderRequiredError, TransactionError, TransferError, TransferErrorReason, ValueError } from '@tetherto/wdk-wallet'
 
 const SEED_PHRASE = 'cook voyage document eight skate token alien guide drink uncle term abuse'
 
@@ -328,8 +328,7 @@ describe('WalletAccountSui', () => {
     test('should throw an assertion error once the key has been erased', async () => {
       const account = new WalletAccountSui(SEED_PHRASE, ACCOUNT_0.path)
 
-      // Stands in for dispose(), which is not implemented yet.
-      account._rawPrivateKey = undefined
+      account.dispose()
 
       await expect(account.sign(MESSAGE)).rejects.toThrow(AssertionError)
       await expect(account.sign(MESSAGE)).rejects.toThrow('The wallet account has been disposed.')
@@ -413,8 +412,7 @@ describe('WalletAccountSui', () => {
     test('should throw an assertion error once the key has been erased', async () => {
       const account = createAccount()
 
-      // Stands in for dispose(), which is not implemented yet.
-      account._rawPrivateKey = undefined
+      account.dispose()
 
       await expect(account.signTransaction({ to: RECIPIENT, value: 1_000 }))
         .rejects.toThrow(AssertionError)
@@ -577,8 +575,7 @@ describe('WalletAccountSui', () => {
     test('should throw an assertion error once the key has been erased', async () => {
       const account = createAccount()
 
-      // Stands in for dispose(), which is not implemented yet.
-      account._rawPrivateKey = undefined
+      account.dispose()
 
       await expect(account.sendTransaction({ to: RECIPIENT, value: 1_000 }))
         .rejects.toThrow(AssertionError)
@@ -670,8 +667,7 @@ describe('WalletAccountSui', () => {
     test('should throw an assertion error once the key has been erased', async () => {
       const account = createAccount()
 
-      // Stands in for dispose(), which is not implemented yet.
-      account._rawPrivateKey = undefined
+      account.dispose()
 
       await expect(account.transfer(TRANSFER)).rejects.toThrow(AssertionError)
     })
@@ -713,13 +709,38 @@ describe('WalletAccountSui', () => {
     })
   })
 
-  describe('Not implemented yet', () => {
-    const account = new WalletAccountSui(SEED_PHRASE, PATH)
+  describe('dispose', () => {
+    test('should erase the private key from memory', () => {
+      const account = createAccount()
 
-    test.each([
-      ['dispose', () => account.dispose()]
-    ])('%s should throw a not implemented error', (_, call) => {
-      expect(call).toThrow(NotImplementedError)
+      const key = account._rawPrivateKey
+
+      expect(account.keyPair.privateKey).toHaveLength(32)
+
+      account.dispose()
+
+      expect(account.keyPair.privateKey).toBeNull()
+      expect(hex(key)).toBe('00'.repeat(32))
+    })
+
+    test('should keep the account readable', () => {
+      const account = createAccount()
+
+      account.dispose()
+
+      expect(account.address).toBe(ACCOUNT_0.address)
+      expect(hex(account.keyPair.publicKey)).toBe(ACCOUNT_0.keyPair.publicKey)
+      expect(account.path).toBe(ACCOUNT_0.fullPath)
+      expect(account.index).toBe(ACCOUNT_0.index)
+    })
+
+    test('should be safe to call twice', () => {
+      const account = createAccount()
+
+      account.dispose()
+
+      expect(() => account.dispose()).not.toThrow()
+      expect(account.keyPair.privateKey).toBeNull()
     })
   })
 })

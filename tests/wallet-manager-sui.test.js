@@ -190,16 +190,27 @@ describe('WalletManagerSui', () => {
   })
 
   describe('dispose', () => {
-    test('should dispose the accounts it handed out', async () => {
+    test('should erase the key material of every account it handed out', async () => {
+      const wallet = createWallet()
+
+      const account = await wallet.getAccount()
+      const other = await wallet.getAccount(1)
+
+      wallet.dispose()
+
+      expect(account.keyPair.privateKey).toBeNull()
+      expect(other.keyPair.privateKey).toBeNull()
+    })
+
+    test('should forget the accounts it handed out', async () => {
       const wallet = createWallet()
 
       const account = await wallet.getAccount()
 
-      account.dispose = jest.fn()
-
       wallet.dispose()
 
-      expect(account.dispose).toHaveBeenCalled()
+      expect(await wallet.getAccount()).not.toBe(account)
+      expect((await wallet.getAccount()).keyPair.privateKey).toHaveLength(32)
     })
   })
 })
