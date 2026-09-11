@@ -332,13 +332,13 @@ export default class WalletAccountReadOnlySui extends WalletAccountReadOnly {
       throw new TransactionError(effects?.status?.error?.message ?? 'The transaction failed to execute.', { cause: result })
     }
 
-    const {
-      Transaction: {
-        effects: {
-          gasUsed: { computationCost, storageCost, storageRebate }
-        }
-      }
-    } = result
+    const { computationCost, storageCost, storageRebate } = result.Transaction.effects?.gasUsed ?? { }
+
+    if ([computationCost, storageCost, storageRebate].some((cost) => cost == null)) {
+      throw new ProviderError('The provider did not report the gas used by the transaction.', {
+        reason: ProviderErrorReason.INTERNAL_SERVER_ERROR
+      })
+    }
 
     return { fee: BigInt(computationCost) + BigInt(storageCost) - BigInt(storageRebate) }
   }

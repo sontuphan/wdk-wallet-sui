@@ -299,6 +299,30 @@ describe('WalletAccountReadOnlySui', () => {
         .rejects.toThrow(TransactionError)
     })
 
+    test('should throw a provider error when the node reports no gas used', async () => {
+      const account = createAccount({
+        SimulateTransaction: (input) => input.doGasSelection
+          ? {
+              transaction: {
+                transaction: {
+                  ...input.transaction,
+                  gasPayment: { objects: [DUMMY_GAS_COIN], owner: ADDRESS, price: 100n, budget: 1_188_000n }
+                },
+                effects: { ...EMPTY_EFFECTS, status: { success: true } }
+              }
+            }
+          : {
+              transaction: { digest: DIGEST, effects: { ...EMPTY_EFFECTS, status: { success: true } } }
+            }
+      })
+
+      const promise = account.quoteSendTransaction({ to: RECIPIENT, value: 1_000 })
+
+      await expect(promise).rejects.toThrow(ProviderError)
+      await expect(promise).rejects.toThrow('The provider did not report the gas used by the transaction.')
+      await expect(promise).rejects.toMatchObject({ reason: ProviderErrorReason.INTERNAL_SERVER_ERROR })
+    })
+
     test('should throw a provider error if the node fails to answer', async () => {
       const account = createAccount({
         SimulateTransaction: () => { throw grpcError('DEADLINE_EXCEEDED', 'deadline exceeded') }

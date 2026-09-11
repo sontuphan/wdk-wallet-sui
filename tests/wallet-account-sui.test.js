@@ -552,6 +552,17 @@ describe('WalletAccountSui', () => {
         .rejects.toThrow(TransactionError)
     })
 
+    test('should keep the digest when the node reports no gas used', async () => {
+      const account = createAccount(PATH, {
+        ExecuteTransaction: () => ({
+          transaction: { digest: DIGEST, effects: { ...EMPTY_EFFECTS, status: { success: true } } }
+        })
+      })
+
+      await expect(account.sendTransaction({ to: RECIPIENT, value: 1_000 }))
+        .resolves.toEqual({ hash: DIGEST, fee: 0n })
+    })
+
     test('should throw a provider error when the node fails to answer', async () => {
       const account = createAccount(PATH, {
         ExecuteTransaction: () => {

@@ -303,7 +303,7 @@ export default class WalletAccountSui extends WalletAccountReadOnlySui {
 
     const { digest, effects } = result.Transaction
 
-    const { computationCost, storageCost, storageRebate } = effects.gasUsed
+    const { computationCost = 0, storageCost = 0, storageRebate = 0 } = effects?.gasUsed ?? { }
 
     return { hash: digest, fee: BigInt(computationCost) + BigInt(storageCost) - BigInt(storageRebate) }
   }
