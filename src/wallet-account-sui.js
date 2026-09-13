@@ -39,8 +39,6 @@ import WalletAccountReadOnlySui, { toTransactionError, toTransferError } from '.
 /** @typedef {import('./wallet-account-read-only-sui.js').SuiTransferOptions} SuiTransferOptions */
 /** @typedef {import('./wallet-account-read-only-sui.js').SuiWalletConfig} SuiWalletConfig */
 
-// Every path segment must be hardened: SLIP-0010 ed25519 derivation has no
-// non-hardened children.
 const SLIP_0010_SUI_DERIVATION_PATH_PREFIX = "m/44'/784'"
 
 /**
@@ -409,8 +407,7 @@ export default class WalletAccountSui extends WalletAccountReadOnlySui {
 
     const { digest, effects } = result.Transaction
 
-    // The transaction has executed by now, so a missing gas summary must not
-    // cost the caller the digest it is reported under.
+    // The transaction has executed: a missing gas summary must not cost the caller the digest.
     const { computationCost = 0, storageCost = 0, storageRebate = 0 } = effects?.gasUsed ?? { }
 
     return { hash: digest, fee: BigInt(computationCost) + BigInt(storageCost) - BigInt(storageRebate) }

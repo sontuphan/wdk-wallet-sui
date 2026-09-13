@@ -28,7 +28,6 @@ const DUMMY_TOKEN_BALANCE = 482n
 const DUMMY_CHECKPOINT = 321_220_176n
 const DUMMY_TIMESTAMP = { seconds: 1_789_098_078n, nanos: 740_000_000 }
 
-// Fee constants implied by the mocked gas summary below:
 // fee = computationCost + storageCost - storageRebate = 100_000 + 4_780_400 - 4_732_596.
 const DUMMY_GAS_USED = {
   computationCost: 100_000n,

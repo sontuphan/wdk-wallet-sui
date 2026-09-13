@@ -136,8 +136,7 @@ export function toTransactionError (error) {
     return new TransactionError(error.message, { reason: TransactionErrorReason.INSUFFICIENT_BALANCE, cause: error })
   }
 
-  // Resolving the transaction runs it against the node, so a failure of the
-  // provider reaches us wrapped into a simulation error.
+  // Resolving runs the transaction against the node, so a provider failure arrives wrapped.
   const status = 'code' in error ? error : error.cause
 
   if (status instanceof Error && 'code' in status) {
@@ -177,25 +176,6 @@ export function toTransferError (error) {
   }
 
   return new ValueError(error?.message ?? 'The transfer options are not valid.', { cause: error })
-}
-
-/**
- * Wraps a transport so that it folds a call's options into its own defaults at
- * the moment it sends the request.
- *
- * The generated clients merge options once, before the call, and a grpc-web
- * transport folds its base url into that result. A failover that switched
- * transports afterwards would keep sending every retry to the provider whose
- * options it started with, which is the one that just failed.
- *
- * @param {RpcTransport} transport - The transport to wrap.
- * @returns {RpcTransport} A transport that merges its options per request.
- */
-function toFailoverCandidate (transport) {
-  return {
-    mergeOptions: (options) => options ?? { },
-    unary: (method, input, options) => transport.unary(method, input, transport.mergeOptions(options))
-  }
 }
 
 /**
@@ -273,7 +253,12 @@ export default class WalletAccountReadOnlySui extends WalletAccountReadOnly {
           const option = typeof entry === 'string'
             ? new GrpcWebFetchTransport({ baseUrl: entry })
             : entry
-          failoverProvider.addProvider(toFailoverCandidate(option))
+
+          // Merging per candidate keeps a retry from reusing the base url of the provider that failed.
+          failoverProvider.addProvider({
+            mergeOptions: (options) => options ?? { },
+            unary: (method, input, options) => option.unary(method, input, option.mergeOptions(options))
+          })
         }
 
         return new SuiGrpcClient({ network, transport: failoverProvider.initialize() })

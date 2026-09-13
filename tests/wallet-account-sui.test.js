@@ -74,7 +74,6 @@ const DUMMY_TOKEN_COIN = {
   balance: DUMMY_TOKEN_BALANCE
 }
 
-// Fee constants implied by the mocked gas summary below:
 // fee = computationCost + storageCost - storageRebate = 100_000 + 4_780_400 - 4_732_596.
 const DUMMY_GAS_USED = {
   computationCost: 100_000n,

@@ -25,8 +25,6 @@ import WalletAccountSui from './wallet-account-sui.js'
 
 /** @typedef {import('./wallet-account-read-only-sui.js').SuiWalletConfig} SuiWalletConfig */
 
-// The share of the reference gas price a transaction bids to be picked up
-// ahead of the ones paying the network's minimum.
 const FEE_RATE_FAST_MULTIPLIER = 200n
 
 export default class WalletManagerSui extends WalletManager {
