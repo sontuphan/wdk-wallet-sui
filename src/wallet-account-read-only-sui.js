@@ -128,7 +128,7 @@ const INSUFFICIENT_TOKEN_BALANCE_MESSAGE = /^insufficient balance of/i
  * Turns an error raised while resolving, simulating or executing a transaction
  * into the matching wallet development kit error.
  *
- * @param {*} error - The error thrown by the sdk.
+ * @param {Error} error - The error thrown by the sdk.
  * @returns {ValueError | ProviderError | TransactionError} The wallet development kit error.
  */
 export function toTransactionError (error) {
@@ -138,9 +138,9 @@ export function toTransactionError (error) {
 
   // Resolving the transaction runs it against the node, so a failure of the
   // provider reaches us wrapped into a simulation error.
-  const status = error?.code ? error : error?.cause
+  const status = 'code' in error ? error : error.cause
 
-  if (status?.code) {
+  if (status instanceof Error && 'code' in status) {
     return toClientError(status)
   }
 
@@ -156,7 +156,7 @@ export function toTransactionError (error) {
  * matching wallet development kit error. A transaction that cannot execute is
  * reported as the transfer it was carrying out.
  *
- * @param {*} error - The error raised by the transfer.
+ * @param {Error} error - The error raised by the transfer.
  * @returns {WdkError} The wallet development kit error.
  */
 export function toTransferError (error) {
@@ -204,18 +204,20 @@ function toFailoverCandidate (transport) {
  * reaches the ledger, so it is reported as a value error rather than as a
  * failure of the provider.
  *
- * @param {*} error - The error thrown by the grpc client.
+ * @param {Error} error - The error thrown by the grpc client.
  * @returns {ValueError | ProviderError} The wallet development kit error.
  */
 export function toClientError (error) {
   const message = decodeStatusMessage(error?.message ?? 'The provider failed to answer the request.')
 
-  if (error?.code === 'INVALID_ARGUMENT') {
+  const code = 'code' in error ? String(error.code) : ''
+
+  if (code === 'INVALID_ARGUMENT') {
     return new ValueError(message, { cause: error })
   }
 
   return new ProviderError(message, {
-    reason: PROVIDER_ERROR_REASONS[error?.code] || ProviderErrorReason.NETWORK_ERROR,
+    reason: PROVIDER_ERROR_REASONS[code] || ProviderErrorReason.NETWORK_ERROR,
     cause: error
   })
 }

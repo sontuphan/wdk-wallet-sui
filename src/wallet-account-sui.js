@@ -47,11 +47,11 @@ const SLIP_0010_SUI_DERIVATION_PATH_PREFIX = "m/44'/784'"
  * Tells a transaction that has already been signed from one that still has to
  * be.
  *
- * @param {*} tx - The transaction.
- * @returns {boolean} True if the transaction carries its bytes and signature.
+ * @param {unknown} tx - The transaction.
+ * @returns {tx is SignatureWithBytes} True if the transaction carries its bytes and signature.
  */
 function isSignedTransaction (tx) {
-  return typeof tx?.bytes === 'string' && typeof tx?.signature === 'string'
+  return typeof tx === 'object' && tx !== null && 'bytes' in tx && 'signature' in tx
 }
 
 /**

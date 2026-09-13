@@ -2,29 +2,29 @@
  * Turns an error raised while resolving, simulating or executing a transaction
  * into the matching wallet development kit error.
  *
- * @param {*} error - The error thrown by the sdk.
+ * @param {Error} error - The error thrown by the sdk.
  * @returns {ValueError | ProviderError | TransactionError} The wallet development kit error.
  */
-export function toTransactionError(error: any): ValueError | ProviderError | TransactionError;
+export function toTransactionError(error: Error): ValueError | ProviderError | TransactionError;
 /**
  * Turns an error raised while quoting or performing a transfer into the
  * matching wallet development kit error. A transaction that cannot execute is
  * reported as the transfer it was carrying out.
  *
- * @param {*} error - The error raised by the transfer.
+ * @param {Error} error - The error raised by the transfer.
  * @returns {WdkError} The wallet development kit error.
  */
-export function toTransferError(error: any): WdkError;
+export function toTransferError(error: Error): WdkError;
 /**
  * Turns an error thrown by the grpc client into the matching wallet development
  * kit error. An invalid argument is rejected on the caller's behalf and never
  * reaches the ledger, so it is reported as a value error rather than as a
  * failure of the provider.
  *
- * @param {*} error - The error thrown by the grpc client.
+ * @param {Error} error - The error thrown by the grpc client.
  * @returns {ValueError | ProviderError} The wallet development kit error.
  */
-export function toClientError(error: any): ValueError | ProviderError;
+export function toClientError(error: Error): ValueError | ProviderError;
 export default class WalletAccountReadOnlySui extends WalletAccountReadOnly {
     /**
      * Creates the client a wallet talks to a node through.
