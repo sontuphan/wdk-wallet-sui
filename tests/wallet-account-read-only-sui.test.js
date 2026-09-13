@@ -2,6 +2,7 @@ import { describe, expect, jest, test } from '@jest/globals'
 
 import { Ed25519Keypair } from '@mysten/sui/keypairs/ed25519'
 import { toSerializedSignature } from '@mysten/sui/cryptography'
+import { Transaction } from '@mysten/sui/transactions'
 
 import WalletAccountReadOnlySui from '../src/wallet-account-read-only-sui.js'
 import {
@@ -303,6 +304,36 @@ describe('WalletAccountReadOnlySui', () => {
       const { fee } = await account.quoteSendTransaction({ to: RECIPIENT, value: 1_000 })
 
       expect(fee).toBe(MOCKED_FEE)
+    })
+
+    test('should quote a transaction built with the sdk', async () => {
+      const tx = new Transaction()
+      tx.setSender(ADDRESS)
+      const [coin] = tx.splitCoins(tx.gas, [1_000])
+      tx.transferObjects([coin], RECIPIENT)
+
+      await expect(account.quoteSendTransaction(tx)).resolves.toEqual({ fee: MOCKED_FEE })
+    })
+
+    test('should quote a transaction built by another copy of the sdk', async () => {
+      const tx = new Transaction()
+      tx.setSender(ADDRESS)
+      const [coin] = tx.splitCoins(tx.gas, [1_000])
+      tx.transferObjects([coin], RECIPIENT)
+
+      // A transaction from a second copy of the sdk carries the brand but is not
+      // an instance of this copy's class, which is how npm installs it whenever
+      // two packages ask for incompatible ranges.
+      const foreign = {
+        [Symbol.for('@mysten/transaction')]: true,
+        getData: () => tx.getData(),
+        setSenderIfNotSet: (sender) => tx.setSenderIfNotSet(sender),
+        build: (options) => tx.build(options)
+      }
+
+      expect(foreign instanceof Transaction).toBe(false)
+
+      await expect(account.quoteSendTransaction(foreign)).resolves.toEqual({ fee: MOCKED_FEE })
     })
 
     test('should throw if the account is not connected to a provider', async () => {

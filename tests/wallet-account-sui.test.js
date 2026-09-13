@@ -438,6 +438,18 @@ describe('WalletAccountSui', () => {
       expect(fee).toBe(MOCKED_FEE)
     })
 
+    test.each([
+      ['bytes that are not base64', { bytes: 'not-base64!!', signature: 'AAAA' }],
+      ['a signature that is not base64', { bytes: 'AAAA', signature: 'not-base64!!' }],
+      ['bytes of an undecodable length', { bytes: 'AAAAA', signature: 'AAAA' }],
+      ['bytes that are not a string', { bytes: 123, signature: 'AAAA' }],
+      ['empty bytes', { bytes: '', signature: '' }]
+    ])('should not take %s for a signed transaction', async (_, tx) => {
+      const account = createAccount()
+
+      await expect(account.quoteSendTransaction(tx)).rejects.toThrow(ValueError)
+    })
+
     test('should quote a signed transaction without resolving it again', async () => {
       const transport = createTransport()
       const account = new WalletAccountSui(SEED_PHRASE, PATH, { transport, network: 'mainnet' })

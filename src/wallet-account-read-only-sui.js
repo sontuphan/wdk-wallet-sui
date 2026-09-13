@@ -22,7 +22,7 @@ import { GrpcWebFetchTransport } from '@protobuf-ts/grpcweb-transport'
 
 import { SimulationError } from '@mysten/sui/client'
 import { SuiGrpcClient } from '@mysten/sui/grpc'
-import { coinWithBalance, Transaction } from '@mysten/sui/transactions'
+import { coinWithBalance, isTransaction, Transaction } from '@mysten/sui/transactions'
 import { verifyPersonalMessageSignature, verifySignature } from '@mysten/sui/verify'
 import { parseSerializedSignature } from '@mysten/sui/cryptography'
 import { isValidTransactionDigest } from '@mysten/sui/utils'
@@ -647,7 +647,7 @@ export default class WalletAccountReadOnlySui extends WalletAccountReadOnly {
     const address = await this.getAddress()
 
     try {
-      if (!(tx instanceof Transaction)) {
+      if (!isTransaction(tx)) {
         const nativeTx = new Transaction()
 
         const [coin] = nativeTx.splitCoins(nativeTx.gas, [tx.value])

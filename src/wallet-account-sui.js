@@ -44,14 +44,29 @@ import WalletAccountReadOnlySui, { toTransactionError, toTransferError } from '.
 const SLIP_0010_SUI_DERIVATION_PATH_PREFIX = "m/44'/784'"
 
 /**
- * Tells a transaction that has already been signed from one that still has to
- * be.
+ * Tells a transaction that has already been signed from one that still has to be.
  *
  * @param {unknown} tx - The transaction.
  * @returns {tx is SignatureWithBytes} True if the transaction carries its bytes and signature.
  */
 function isSignedTransaction (tx) {
-  return typeof tx === 'object' && tx !== null && 'bytes' in tx && 'signature' in tx
+  if (typeof tx !== 'object' || tx === null || !('bytes' in tx) || !('signature' in tx)) {
+    return false
+  }
+
+  const { bytes, signature } = tx
+
+  if (typeof bytes !== 'string' || typeof signature !== 'string' || !bytes || !signature) {
+    return false
+  }
+
+  try {
+    fromBase64(bytes)
+    fromBase64(signature)
+    return true
+  } catch {
+    return false
+  }
 }
 
 /**
